@@ -28,6 +28,38 @@ Money.create(15000, 'COP') // 15.000 COP
 Money.create(1500.5, 'COP') // DomainError
 ```
 
+## Verificacion de identidad
+
+El servicio comprueba el testimonio que acompana a cada peticion contra el JWKS del user pool de Cognito ([ADR-004](https://github.com/Nexus-Battle-VI/Nexus-Battle-Infrastructure/blob/main/docs/adr/ADR-004-identity-directory.md)). Se verifica el **token de acceso**, no el de identidad: el de identidad describe al usuario para la interfaz, el de acceso es el que autoriza y el unico cuyo `client_id` puede comprobarse.
+
+La comprobacion de firma la hace [`aws-jwt-verify`](https://github.com/awslabs/aws-jwt-verify). **No se implementa verificacion criptografica a mano**: es la clase de codigo donde un error sutil no falla, sino que acepta tokens falsificados en silencio.
+
+**La proteccion es el comportamiento por defecto.** El guard se registra de forma global y hay que excluir explicitamente lo que deba ser publico con `@Public()`. Al reves, cualquier endpoint nuevo naceria desprotegido y ese olvido no falla ninguna prueba.
+
+| Ruta                                           | Proteccion                                                      |
+| ---------------------------------------------- | --------------------------------------------------------------- |
+| `GET /api/products` y `GET /api/products/:sku` | **Publica.** El catalogo publicado es informacion de escaparate |
+| `POST /api/products`                           | Rol **`ADMINISTRATOR`**                                         |
+| `POST /api/products/:sku/publication`          | Rol **`ADMINISTRATOR`**                                         |
+| `POST /api/products/:sku/archival`             | Rol **`ADMINISTRATOR`**                                         |
+| `POST /api/products/:sku/price`                | Rol **`ADMINISTRATOR`**                                         |
+| `GET /api/health/*`                            | **Publica.** Un orquestador no lleva testimonio                 |
+
+Antes de esto, **cualquiera podia crear un producto, publicarlo o cambiarle el precio**.
+
+### Un binario de produccion sin autenticacion no arranca
+
+Con `NODE_ENV=production` y `AUTH_MODE=disabled`, `loadConfig` lanza `ConfigurationError` y el servicio **no llega a escuchar**. Es la traduccion en codigo del blocker de ADR-004: un aviso en el registro se pasa por alto; un arranque que falla, no.
+
+| Variable             | Efecto                                                                   |
+| -------------------- | ------------------------------------------------------------------------ |
+| `AUTH_MODE=disabled` | Se atribuye la **identidad anonima** a toda peticion. Estado del blocker |
+| `AUTH_MODE=jwt`      | Exige `COGNITO_USER_POOL_ID` y `COGNITO_CLIENT_ID`                       |
+
+Con `disabled` no se deja pasar sin mas: se atribuye el sujeto literal `anonymous` con todos los roles. Sin proveedor **no se sabe** quien realiza la peticion, y el dato que se guarde debe decirlo. Un registro firmado por `anonymous` es honesto; uno firmado por un identificador sin verificar, no.
+
+Los roles llegan en el claim `cognito:groups`. **Los grupos que no corresponden a un rol conocido se descartan**: aceptarlos convertiria el pool en una fuente de roles arbitrarios, donde bastaria crear un grupo con cualquier nombre para inventar un permiso.
+
 ## Requisitos
 
 | Herramienta | Versión                                       |
