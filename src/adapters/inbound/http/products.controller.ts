@@ -12,7 +12,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common'
-import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger'
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger'
 
 import { DomainError } from '../../../domain/errors/DomainError'
 import {
@@ -35,6 +35,8 @@ import {
   LIST_PRODUCTS,
   PUBLISH_PRODUCT,
 } from './tokens'
+import { Role } from '../../../application/ports/TokenVerifierPort'
+import { Public, Roles } from './auth/decorators'
 import { ChangePriceRequest, CreateProductRequest, ProductResponse } from './products.dto'
 
 /**
@@ -45,6 +47,7 @@ import { ChangePriceRequest, CreateProductRequest, ProductResponse } from './pro
  * estado viven en el dominio.
  */
 @ApiTags('products')
+@ApiBearerAuth()
 @Controller('products')
 export class ProductsController {
   constructor(
@@ -56,6 +59,10 @@ export class ProductsController {
     @Inject(LIST_PRODUCTS) private readonly listProducts: ListProducts,
   ) {}
 
+  // Crear, publicar, archivar y cambiar el precio son operaciones de gestion
+  // del catalogo. Antes no exigian nada: cualquiera podia poner a la venta un
+  // producto o cambiarle el precio.
+  @Roles(Role.Administrator)
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Crea un producto en borrador' })
@@ -70,6 +77,7 @@ export class ProductsController {
     }
   }
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'Lista los productos publicados' })
   @ApiQuery({ name: 'category', required: false, example: 'armas' })
@@ -82,6 +90,7 @@ export class ProductsController {
     }
   }
 
+  @Public()
   @Get(':sku')
   @ApiOperation({ summary: 'Recupera un producto publicado' })
   @ApiResponse({ status: 200, description: 'Producto encontrado', type: ProductResponse })
@@ -94,6 +103,7 @@ export class ProductsController {
     }
   }
 
+  @Roles(Role.Administrator)
   @Post(':sku/publication')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Publica un producto' })
@@ -108,6 +118,7 @@ export class ProductsController {
     }
   }
 
+  @Roles(Role.Administrator)
   @Post(':sku/archival')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Archiva un producto' })
@@ -122,6 +133,7 @@ export class ProductsController {
     }
   }
 
+  @Roles(Role.Administrator)
   @Post(':sku/price')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cambia el precio de un producto' })
