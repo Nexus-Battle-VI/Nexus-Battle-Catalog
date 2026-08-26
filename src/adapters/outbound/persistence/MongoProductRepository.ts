@@ -96,9 +96,9 @@ export class MongoProductRepository implements ProductRepositoryPort {
       status: snapshot.status,
       isPremium: snapshot.isPremium,
       realMoneyPrice:
-        snapshot.realMoneyPriceAmount === null
+        snapshot.realMoneyPriceAmount === null || snapshot.realMoneyPriceCurrency === null
           ? null
-          : Money.create(snapshot.realMoneyPriceAmount, snapshot.realMoneyPriceCurrency!),
+          : Money.create(snapshot.realMoneyPriceAmount, snapshot.realMoneyPriceCurrency),
     })
   }
 }

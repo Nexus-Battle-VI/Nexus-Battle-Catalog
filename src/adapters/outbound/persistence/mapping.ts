@@ -126,11 +126,11 @@ export const toDocument = (snapshot: ProductSnapshot): ProductDocument => {
     priceCurrency: snapshot.priceCurrency,
     status: snapshot.status,
     isPremium: snapshot.isPremium,
-    ...(snapshot.realMoneyPriceAmount === null
+    ...(snapshot.realMoneyPriceAmount === null || snapshot.realMoneyPriceCurrency === null
       ? {}
       : {
           realMoneyPriceAmount: Long.fromNumber(snapshot.realMoneyPriceAmount),
-          realMoneyPriceCurrency: snapshot.realMoneyPriceCurrency!,
+          realMoneyPriceCurrency: snapshot.realMoneyPriceCurrency,
         }),
   }
 }
