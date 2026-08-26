@@ -28,6 +28,18 @@ Money.create(15000, 'COP') // 15.000 COP
 Money.create(1500.5, 'COP') // DomainError
 ```
 
+## Productos Premium
+
+Un producto puede marcarse como `isPremium` y conservar, además de su precio
+en créditos, un precio opcional en moneda real. Ambos importes se representan
+como enteros en la unidad mínima de su moneda: por ejemplo, `$9.99 USD` se
+expresa como `999 USD`.
+
+Los productos creados antes de esta capacidad se interpretan como no Premium y
+sin precio real, por lo que permanecen compatibles con el catálogo actual.
+Las reglas que validan la combinación entre la bandera Premium y el precio real
+se entregan en HU-36.2.
+
 ## Verificacion de identidad
 
 El servicio comprueba el testimonio que acompana a cada peticion contra el JWKS del user pool de Cognito ([ADR-004](https://github.com/Nexus-Battle-VI/Nexus-Battle-Infrastructure/blob/main/docs/adr/ADR-004-identity-directory.md)). Se verifica el **token de acceso**, no el de identidad: el de identidad describe al usuario para la interfaz, el de acceso es el que autoriza y el unico cuyo `client_id` puede comprobarse.

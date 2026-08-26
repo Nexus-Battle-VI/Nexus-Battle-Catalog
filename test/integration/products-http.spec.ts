@@ -49,6 +49,8 @@ describe('API de catalogo', () => {
       name: 'Espada de hierro',
       category: 'armas',
       price: { amount: 15_000, currency: 'COP' },
+      isPremium: false,
+      realMoneyPrice: null,
       status: 'DRAFT',
     })
   })

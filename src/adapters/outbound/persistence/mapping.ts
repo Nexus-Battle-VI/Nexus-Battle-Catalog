@@ -43,6 +43,9 @@ export interface ProductDocument {
   readonly priceAmount: Long
   readonly priceCurrency: string
   readonly status: string
+  readonly isPremium?: boolean
+  readonly realMoneyPriceAmount?: Long
+  readonly realMoneyPriceCurrency?: string
 }
 
 const STATUSES: readonly string[] = Object.values(ProductStatus)
@@ -98,6 +101,12 @@ export const toSnapshot = (document: ProductDocument): ProductSnapshot => {
     priceAmount: toExactAmount(document.priceAmount, document._id),
     priceCurrency: document.priceCurrency,
     status: document.status as ProductStatus,
+    isPremium: document.isPremium ?? false,
+    realMoneyPriceAmount:
+      document.realMoneyPriceAmount === undefined
+        ? null
+        : toExactAmount(document.realMoneyPriceAmount, document._id),
+    realMoneyPriceCurrency: document.realMoneyPriceCurrency ?? null,
   }
 }
 
@@ -116,5 +125,12 @@ export const toDocument = (snapshot: ProductSnapshot): ProductDocument => {
     priceAmount: Long.fromNumber(snapshot.priceAmount),
     priceCurrency: snapshot.priceCurrency,
     status: snapshot.status,
+    isPremium: snapshot.isPremium,
+    ...(snapshot.realMoneyPriceAmount === null || snapshot.realMoneyPriceCurrency === null
+      ? {}
+      : {
+          realMoneyPriceAmount: Long.fromNumber(snapshot.realMoneyPriceAmount),
+          realMoneyPriceCurrency: snapshot.realMoneyPriceCurrency,
+        }),
   }
 }

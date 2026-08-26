@@ -69,6 +69,12 @@ export class ProductResponse {
   @ApiProperty({ type: MoneyResponse })
   readonly price!: MoneyResponse
 
+  @ApiProperty({ example: false })
+  readonly isPremium!: boolean
+
+  @ApiPropertyOptional({ type: MoneyResponse, nullable: true })
+  readonly realMoneyPrice!: MoneyResponse | null
+
   @ApiProperty({ example: 'DRAFT', enum: ['DRAFT', 'PUBLISHED', 'ARCHIVED'] })
   readonly status!: string
 }

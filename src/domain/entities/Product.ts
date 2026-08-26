@@ -25,6 +25,9 @@ export interface ProductSnapshot {
   readonly priceAmount: number
   readonly priceCurrency: string
   readonly status: ProductStatus
+  readonly isPremium: boolean
+  readonly realMoneyPriceAmount: number | null
+  readonly realMoneyPriceCurrency: string | null
 }
 
 /**
@@ -42,6 +45,8 @@ export class Product {
   private price: Money
   private status: ProductStatus
   private readonly events: DomainEvent[] = []
+  private isPremium: boolean
+  private realMoneyPrice: Money | null
 
   private constructor(params: {
     sku: Sku
@@ -49,21 +54,37 @@ export class Product {
     category: Category
     price: Money
     status: ProductStatus
+    isPremium: boolean
+    realMoneyPrice: Money | null
   }) {
     this.sku = params.sku
     this.name = params.name
     this.category = params.category
     this.price = params.price
     this.status = params.status
+    this.isPremium = params.isPremium
+    this.realMoneyPrice = params.realMoneyPrice
   }
 
   /** Crea un producto en borrador. */
-  static draft(params: { sku: Sku; name: ProductName; category: Category; price: Money }): Product {
+  static draft(params: {
+    sku: Sku
+    name: ProductName
+    category: Category
+    price: Money
+    isPremium?: boolean
+    realMoneyPrice?: Money | null
+  }): Product {
     if (params.price.isZero()) {
       throw new DomainError('Un producto del catalogo no puede tener precio cero.')
     }
 
-    return new Product({ ...params, status: ProductStatus.Draft })
+    return new Product({
+      ...params,
+      status: ProductStatus.Draft,
+      isPremium: params.isPremium ?? false,
+      realMoneyPrice: params.realMoneyPrice ?? null,
+    })
   }
 
   /** Reconstituye un producto persistido. No emite eventos. */
@@ -73,8 +94,14 @@ export class Product {
     category: Category
     price: Money
     status: ProductStatus
+    isPremium?: boolean
+    realMoneyPrice?: Money | null
   }): Product {
-    return new Product(params)
+    return new Product({
+      ...params,
+      isPremium: params.isPremium ?? false,
+      realMoneyPrice: params.realMoneyPrice ?? null,
+    })
   }
 
   get currentName(): ProductName {
@@ -205,6 +232,9 @@ export class Product {
       priceAmount: this.price.amount,
       priceCurrency: this.price.currency,
       status: this.status,
+      isPremium: this.isPremium,
+      realMoneyPriceAmount: this.realMoneyPrice?.amount ?? null,
+      realMoneyPriceCurrency: this.realMoneyPrice?.currency ?? null,
     }
   }
 }
