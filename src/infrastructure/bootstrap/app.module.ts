@@ -27,8 +27,10 @@ import type { ProductRepositoryPort } from '../../application/ports/ProductRepos
 import type { ClockPort } from '../../application/ports/ClockPort'
 
 import { InMemoryProductRepository } from '../../adapters/outbound/persistence/InMemoryProductRepository'
+import { MongoProductRepository } from '../../adapters/outbound/persistence/MongoProductRepository'
 import { SystemClock } from '../../adapters/outbound/system/SystemClock'
 
+import { createMongoClient, databaseOf } from '../persistence/database'
 import { createLogger, type Logger } from '../observability/logger'
 import { AuthMode, loadConfig, PersistenceDriver, type AppConfig } from '../config/env'
 
@@ -70,18 +72,36 @@ export const LOGGER = Symbol('Logger')
     },
     {
       provide: PRODUCT_REPOSITORY,
-      useFactory: (config: AppConfig, logger: Logger): ProductRepositoryPort => {
-        if (config.persistenceDriver === PersistenceDriver.Mongo) {
-          // La configuracion se valida al arrancar para que un despliegue mal
-          // parametrizado falle de inmediato. El adaptador MongoDB depende de
-          // que ADR-005 decida el ODM; no se sustituye por una simulacion.
-          logger.warn('mongo_driver_not_available', {
-            detail:
-              'El adaptador MongoDB requiere ADR-005 aprobado. Se usa el repositorio en memoria.',
+      useFactory: async (config: AppConfig, logger: Logger): Promise<ProductRepositoryPort> => {
+        if (config.persistenceDriver !== PersistenceDriver.Mongo) {
+          logger.warn('in_memory_persistence', {
+            detail: 'PERSISTENCE_DRIVER=memory: el estado se pierde al reiniciar el servicio.',
           })
+
+          return new InMemoryProductRepository()
         }
 
-        return new InMemoryProductRepository()
+        // `loadConfig` ya garantiza que MONGODB_URI existe con este driver: un
+        // servicio mal configurado no debe arrancar y aparentar salud.
+        if (config.databaseUrl === null) {
+          throw new Error('MONGODB_URI es obligatorio con PERSISTENCE_DRIVER=mongo.')
+        }
+
+        const options = { uri: config.databaseUrl }
+        const client = createMongoClient(options)
+
+        // Se conecta AQUI, y no de forma perezosa en la primera consulta. El
+        // driver permite lo segundo, pero entonces un motor inalcanzable se
+        // manifestaria como un error de peticion en vez de como lo que es: un
+        // servicio que no deberia haber arrancado.
+        await client.connect()
+
+        logger.info('mongo_persistence', { detail: 'Adaptador MongoDB activo.' })
+
+        // El esquema NO se migra aqui. Migrar al arrancar hace que varias
+        // replicas migren a la vez y que una migracion rota deje el servicio en
+        // bucle de reinicio. Es un paso explicito: `npm run migrate`.
+        return new MongoProductRepository(databaseOf(client, options))
       },
       inject: [APP_CONFIG, LOGGER],
     },
