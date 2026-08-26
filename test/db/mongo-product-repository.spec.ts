@@ -165,9 +165,16 @@ describe('MongoProductRepository', () => {
     const product = buildProduct('armas', 5_000_000_000)
     await repository.save(product)
 
-    const documento = await productos().findOne({ _id: product.sku.value })
+    // Se le pregunta al MOTOR por el tipo BSON almacenado, en vez de mirar el
+    // valor que devuelve el driver: eso ultimo dependeria de como este
+    // configurada la promocion de enteros, que es precisamente lo que no debe
+    // decidir si la prueba pasa.
+    const comoLong = await productos().countDocuments({
+      _id: product.sku.value,
+      priceAmount: { $type: 'long' },
+    })
 
-    expect(documento?.priceAmount).toBeInstanceOf(Long)
+    expect(comoLong).toBe(1)
 
     const found = await repository.findBySku(product.sku)
 

@@ -26,6 +26,14 @@ export const createMongoClient = (options: DatabaseOptions): MongoClient =>
     serverSelectionTimeoutMS: 5_000,
     // Cerrar conexiones ociosas devuelve capacidad al motor compartido.
     maxIdleTimeMS: 30_000,
+    // Los enteros de 64 bits llegan como `Long` y NO como numero.
+    //
+    // Por defecto el driver los promociona a numero cuando caben en 53 bits y
+    // los deja como `Long` cuando no. Eso significa que el tipo que recibe la
+    // traduccion depende del VALOR, y un camino que solo se ejercita con
+    // importes grandes es un camino que nadie prueba. Con esto siempre llega un
+    // `Long`, y la comprobacion de exactitud se aplica siempre.
+    promoteLongs: false,
   })
 
 export const databaseOf = (client: MongoClient, options: DatabaseOptions): Db =>
