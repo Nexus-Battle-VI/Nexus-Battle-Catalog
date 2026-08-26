@@ -72,6 +72,55 @@ Con `disabled` no se deja pasar sin mas: se atribuye el sujeto literal `anonymou
 
 Los roles llegan en el claim `cognito:groups`. **Los grupos que no corresponden a un rol conocido se descartan**: aceptarlos convertiria el pool en una fuente de roles arbitrarios, donde bastaria crear un grupo con cualquier nombre para inventar un permiso.
 
+## Persistencia
+
+MongoDB con el **driver oficial** ([ADR-012](https://github.com/Nexus-Battle-VI/Nexus-Battle-Infrastructure/blob/main/docs/adr/ADR-012-orm-odm.md)). No hay ODM: el documento que se guarda es exactamente el que se lee en el adaptador.
+
+| Variable                    | Efecto                                                       |
+| --------------------------- | ------------------------------------------------------------ |
+| `PERSISTENCE_DRIVER=memory` | Repositorio en proceso. **El estado se pierde al reiniciar** |
+| `PERSISTENCE_DRIVER=mongo`  | Adaptador real. Exige `MONGODB_URI`                          |
+
+### El esquema no se migra al arrancar
+
+```bash
+npm run migrate
+```
+
+Es un paso explícito del despliegue, y el motivo es concreto: migrar desde el arranque hace que **varias réplicas migren a la vez**, y que un despliegue con una migración rota deje el servicio en **bucle de reinicio** en lugar de fallar una sola vez, de forma visible.
+
+MongoDB no trae migrador, así que hay uno propio y deliberadamente pequeño: una colección `_migrations` con el nombre como `_id`. Esa unicidad da **exclusión mutua real**, porque la migración se reclama antes de ejecutarse. Si el proceso muere a medias, la siguiente ejecución se niega a continuar y dice cuál quedó incompleta.
+
+### El SKU es la clave del documento
+
+Ya identifica al producto de forma única en el dominio, así que MongoDB garantiza esa unicidad **sin un índice adicional**: un segundo producto con el mismo SKU no se puede ni escribir.
+
+### El dinero se guarda como `Long`
+
+El driver guardaría un `number` de JavaScript como `double` de BSON, y **un doble no es el tipo en el que se guarda dinero**. Al leerlo se comprueba que la conversión sea exacta.
+
+Se usa `promoteLongs: false` a propósito: por defecto el driver promociona un entero de 64 bits a número cuando cabe en 53 bits, de modo que el tipo dependería del **valor** y la comprobación solo se ejercitaría con importes grandes — un camino que nadie prueba.
+
+### El validador vive en el motor
+
+La colección se crea con `$jsonSchema`, `validationLevel: 'strict'` y `additionalProperties: false`.
+
+Esto **no** contradice el rechazo de Mongoose en ADR-012: un esquema de Mongoose valida en la **aplicación**, repitiendo lo que el dominio ya hace. Este valida en el **motor**, y es el equivalente de las restricciones `CHECK` de los servicios de PostgreSQL.
+
+### La versión del driver está fijada en la línea 6.x
+
+La `7.6.0` **no conecta** con MongoDB 8.0: el servidor rechaza el saludo del monitor con `Missing required sub-document 'driver' in the client metadata document`. Se comprobó cambiando una sola variable, con la misma imagen del servidor. Queda registrado en ADR-012.
+
+### Pruebas contra el motor real
+
+```bash
+npm run test:db
+```
+
+Levantan MongoDB 8.0 en un contenedor con Testcontainers. **Necesitan Docker**, y por eso están fuera de `npm test`: quien trabaja en el dominio o en los casos de uso no debería necesitarlo. El CI ejecuta ambas suites.
+
+Lo que comprueban no se puede comprobar de otra forma: que las restricciones existan de verdad y que el guardado haga lo que dice. Un doble de prueba habría pasado con un esquema equivocado.
+
 ## Requisitos
 
 | Herramienta | Versión                                       |
@@ -147,7 +196,7 @@ La imagen es multi-etapa, se ejecuta con el usuario sin privilegios `node`, incl
 
 ## Limitaciones conocidas del alcance actual
 
-- **La persistencia es en memoria** y se pierde al reiniciar. El adaptador MongoDB depende de que ADR-005 decida el ODM. Configurar `PERSISTENCE_DRIVER=mongo` valida la configuración y lo advierte en el registro, pero no habilita un adaptador que no existe.
+- **La persistencia por defecto es en memoria y se pierde al reiniciar.** Con `PERSISTENCE_DRIVER=mongo` opera el adaptador real sobre MongoDB con el driver oficial, probado contra un motor en contenedor. El repositorio en memoria no es un resto del andamiaje: es lo que permite probar el dominio y los casos de uso **sin Docker**. El driver está fijado en la línea `6.x`: la `7.6.0` no conecta con MongoDB 8.0.
 - **No hay control de acceso.** Crear, publicar, archivar y cambiar precios deberían requerir rol de administrador. La autorización depende de que Account emita credenciales verificables, lo que a su vez depende del proveedor de identidad pendiente de aprobación. Añadir aquí una comprobación de rol sin una identidad verificable sería seguridad aparente.
 - **No se publica el catálogo hacia otros contextos.** Los eventos de dominio existen y están documentados, pero su transporte depende de ADR-006.
 - No hay inventario ni stock: la disponibilidad de unidades no pertenece a este contexto.
