@@ -64,6 +64,8 @@ export class Product {
     this.status = params.status
     this.isPremium = params.isPremium
     this.realMoneyPrice = params.realMoneyPrice
+
+    Product.assertValidPremiumConfiguration(this.isPremium, this.realMoneyPrice)
   }
 
   /** Crea un producto en borrador. */
@@ -180,6 +182,30 @@ export class Product {
   }
 
   /**
+   * Configura la comercializacion Premium del producto.
+   *
+   * La bandera y el precio real forman una sola decision de negocio: cambiarlos
+   * por separado permitiria persistir estados que no tienen significado.
+   */
+  configurePremium(isPremium: boolean, realMoneyPrice: Money | null): boolean {
+    Product.assertValidPremiumConfiguration(isPremium, realMoneyPrice)
+
+    const currentPriceEquals =
+      this.realMoneyPrice === null
+        ? realMoneyPrice === null
+        : realMoneyPrice !== null && this.realMoneyPrice.equals(realMoneyPrice)
+
+    if (this.isPremium === isPremium && currentPriceEquals) {
+      return false
+    }
+
+    this.isPremium = isPremium
+    this.realMoneyPrice = realMoneyPrice
+
+    return true
+  }
+
+  /**
    * Cambia el precio.
    *
    * Un producto archivado no admite cambios de precio: su precio es el que
@@ -235,6 +261,19 @@ export class Product {
       isPremium: this.isPremium,
       realMoneyPriceAmount: this.realMoneyPrice?.amount ?? null,
       realMoneyPriceCurrency: this.realMoneyPrice?.currency ?? null,
+    }
+  }
+
+  private static assertValidPremiumConfiguration(
+    isPremium: boolean,
+    realMoneyPrice: Money | null,
+  ): void {
+    if (isPremium && (realMoneyPrice === null || realMoneyPrice.isZero())) {
+      throw new DomainError('Un producto premium requiere un precio en moneda real valido.')
+    }
+
+    if (!isPremium && realMoneyPrice !== null) {
+      throw new DomainError('Un producto no premium no puede tener un precio en moneda real.')
     }
   }
 }

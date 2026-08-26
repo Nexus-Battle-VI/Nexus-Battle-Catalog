@@ -37,8 +37,9 @@ expresa como `999 USD`.
 
 Los productos creados antes de esta capacidad se interpretan como no Premium y
 sin precio real, por lo que permanecen compatibles con el catálogo actual.
-Las reglas que validan la combinación entre la bandera Premium y el precio real
-se entregan en HU-36.2.
+El agregado valida que un producto Premium tenga un precio real mayor que cero
+y que un producto no Premium no conserve un precio real. Estas invariantes se
+aplican tanto al crear como al modificar la configuración Premium.
 
 ## Verificacion de identidad
 
