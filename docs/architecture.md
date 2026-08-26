@@ -73,6 +73,18 @@ La razón es concreta: `0.1 + 0.2 !== 0.3` en punto flotante. Al sumar líneas d
 
 `Money` también rechaza operar importes de monedas distintas. Sumar COP con USD no es un error de redondeo: es una operación sin significado, y el tipo lo impide.
 
+## Configuración Premium
+
+La condición `isPremium` y el precio real forman una única decisión dentro del
+agregado `Product`. La operación `configurePremium()` valida que los productos
+Premium tengan un importe real estrictamente positivo y que los productos no
+Premium no conserven ese importe.
+
+La regla se ejecuta al crear, reconstituir y modificar el agregado. De esta
+forma ningún repositorio puede persistir una instantánea con la bandera y el
+precio real en un estado inconsistente. La validación de moneda y precisión se
+reutiliza desde el objeto de valor `Money`.
+
 ## Puertos
 
 | Puerto                  | Responsabilidad                         | Implementación actual       |
