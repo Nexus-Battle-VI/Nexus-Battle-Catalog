@@ -278,6 +278,71 @@ describe('Product', () => {
     })
   })
 
+  it('rechaza crear un producto Premium sin precio real', () => {
+    expect(() =>
+      Product.draft({
+        sku: Sku.create('premium-sin-precio'),
+        name: ProductName.create('Premium sin precio'),
+        category: Category.create('accesorios'),
+        price: cop(15_000),
+        isPremium: true,
+      }),
+    ).toThrow(/premium requiere un precio/)
+  })
+
+  it('rechaza crear un producto Premium con precio real cero', () => {
+    expect(() =>
+      Product.draft({
+        sku: Sku.create('premium-precio-cero'),
+        name: ProductName.create('Premium precio cero'),
+        category: Category.create('accesorios'),
+        price: cop(15_000),
+        isPremium: true,
+        realMoneyPrice: Money.zero('USD'),
+      }),
+    ).toThrow(/premium requiere un precio/)
+  })
+
+  it('rechaza asignar un precio real a un producto no Premium', () => {
+    expect(() =>
+      Product.draft({
+        sku: Sku.create('normal-con-precio-real'),
+        name: ProductName.create('Normal con precio real'),
+        category: Category.create('accesorios'),
+        price: cop(15_000),
+        realMoneyPrice: Money.create(999, 'USD'),
+      }),
+    ).toThrow(/no premium no puede tener/)
+  })
+
+  it('configura y modifica un precio Premium valido', () => {
+    const product = draft()
+
+    expect(product.configurePremium(true, Money.create(499, 'USD'))).toBe(true)
+    expect(product.configurePremium(true, Money.create(999, 'USD'))).toBe(true)
+    expect(product.toSnapshot()).toMatchObject({
+      isPremium: true,
+      realMoneyPriceAmount: 999,
+      realMoneyPriceCurrency: 'USD',
+    })
+  })
+
+  it('rechaza configurar Premium sin precio y precio real sin Premium', () => {
+    const product = draft()
+
+    expect(() => product.configurePremium(true, null)).toThrow(/premium requiere un precio/)
+    expect(() => product.configurePremium(false, Money.create(999, 'USD'))).toThrow(
+      /no premium no puede tener/,
+    )
+  })
+
+  it('no cambia un producto cuando recibe la misma configuracion Premium', () => {
+    const product = draft()
+    product.configurePremium(true, Money.create(999, 'USD'))
+
+    expect(product.configurePremium(true, Money.create(999, 'USD'))).toBe(false)
+  })
+
   it('reconstituye un producto persistido sin emitir eventos', () => {
     const product = Product.restore({
       sku: Sku.create('pocion'),
