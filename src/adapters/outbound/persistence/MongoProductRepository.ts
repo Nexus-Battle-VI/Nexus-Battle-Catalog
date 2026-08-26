@@ -94,6 +94,11 @@ export class MongoProductRepository implements ProductRepositoryPort {
       category: Category.create(snapshot.category),
       price: Money.create(snapshot.priceAmount, snapshot.priceCurrency),
       status: snapshot.status,
+      isPremium: snapshot.isPremium,
+      realMoneyPrice:
+        snapshot.realMoneyPriceAmount === null
+          ? null
+          : Money.create(snapshot.realMoneyPriceAmount, snapshot.realMoneyPriceCurrency!),
     })
   }
 }

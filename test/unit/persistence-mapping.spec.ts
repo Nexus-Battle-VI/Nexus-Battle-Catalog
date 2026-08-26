@@ -29,6 +29,9 @@ const SNAPSHOT: ProductSnapshot = {
   priceAmount: 150_000,
   priceCurrency: 'COP',
   status: ProductStatus.Published,
+  isPremium: false,
+  realMoneyPriceAmount: null,
+  realMoneyPriceCurrency: null,
 }
 
 describe('Traduccion entre documento e instantanea', () => {
@@ -38,6 +41,20 @@ describe('Traduccion entre documento e instantanea', () => {
 
   it('la traduccion es reversible', () => {
     expect(toSnapshot(toDocument(SNAPSHOT))).toEqual(SNAPSHOT)
+  })
+
+  it('preserva los datos de un producto Premium', () => {
+    const premium: ProductSnapshot = {
+      ...SNAPSHOT,
+      isPremium: true,
+      realMoneyPriceAmount: 999,
+      realMoneyPriceCurrency: 'USD',
+    }
+
+    const document = toDocument(premium)
+
+    expect(document.realMoneyPriceAmount).toEqual(Long.fromNumber(999))
+    expect(toSnapshot(document)).toEqual(premium)
   })
 
   /**

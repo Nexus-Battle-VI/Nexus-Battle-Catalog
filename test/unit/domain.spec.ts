@@ -253,6 +253,28 @@ describe('Product', () => {
       priceAmount: 15_000,
       priceCurrency: 'COP',
       status: ProductStatus.Draft,
+      isPremium: false,
+      realMoneyPriceAmount: null,
+      realMoneyPriceCurrency: null,
+    })
+  })
+
+  it('conserva precio en creditos y precio real en un producto Premium', () => {
+    const product = Product.draft({
+      sku: Sku.create('corona-premium'),
+      name: ProductName.create('Corona premium'),
+      category: Category.create('accesorios'),
+      price: cop(15_000),
+      isPremium: true,
+      realMoneyPrice: Money.create(999, 'USD'),
+    })
+
+    expect(product.toSnapshot()).toMatchObject({
+      isPremium: true,
+      priceAmount: 15_000,
+      priceCurrency: 'COP',
+      realMoneyPriceAmount: 999,
+      realMoneyPriceCurrency: 'USD',
     })
   })
 
