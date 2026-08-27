@@ -18,8 +18,10 @@ import { toDocument, toSnapshot, type ProductDocument } from './mapping'
  */
 export class MongoProductRepository implements ProductRepositoryPort {
   private readonly products: Collection<ProductDocument>
+  private readonly db: Db
 
   constructor(db: Db) {
+    this.db = db
     this.products = db.collection<ProductDocument>('products')
   }
 
@@ -83,6 +85,15 @@ export class MongoProductRepository implements ProductRepositoryPort {
     const documents = await this.products.find(filter).sort({ _id: 1 }).toArray()
 
     return documents.map((document) => MongoProductRepository.hydrate(document))
+  }
+
+  async isAvailable(): Promise<boolean> {
+    try {
+      await this.db.command({ ping: 1 })
+      return true
+    } catch {
+      return false
+    }
   }
 
   private static hydrate(document: ProductDocument): Product {

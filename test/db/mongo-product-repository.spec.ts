@@ -102,6 +102,10 @@ describe('MongoProductRepository', () => {
     expect(await repository.exists(Sku.create('sku-inexistente'))).toBe(false)
   })
 
+  it('comprueba la disponibilidad mediante una operacion real del motor', async () => {
+    expect(await repository.isAvailable()).toBe(true)
+  })
+
   /**
    * El mismo contrato que cumple el repositorio en memoria: una mutacion que no
    * se guarda NO debe filtrarse al almacen. Es lo que hace que una prueba falle
