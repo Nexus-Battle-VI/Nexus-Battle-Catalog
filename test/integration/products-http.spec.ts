@@ -61,6 +61,15 @@ describe('API de catalogo', () => {
     expect((await create({ ...base, sku: 'duplicado' })).status).toBe(409)
   })
 
+  it('POST /api/products admite una sola creacion concurrente por SKU', async () => {
+    const responses = await Promise.all([
+      create({ ...base, sku: 'concurrente', name: 'Primer candidato' }),
+      create({ ...base, sku: 'concurrente', name: 'Segundo candidato' }),
+    ])
+
+    expect(responses.map(({ status }) => status).sort()).toEqual([201, 409])
+  })
+
   it.each([
     ['referencia mal formada', { sku: 'Espada_Hierro' }],
     ['nombre demasiado corto', { sku: 'corto', name: 'Ab' }],

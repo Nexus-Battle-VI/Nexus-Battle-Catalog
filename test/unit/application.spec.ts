@@ -94,7 +94,25 @@ describe('CreateProduct', () => {
     const harness = buildHarness()
     await harness.create.execute(command)
 
-    await expect(harness.create.execute(command)).rejects.toBeInstanceOf(ProductAlreadyExistsError)
+    await expect(
+      harness.create.execute({ ...command, name: 'Producto que no debe reemplazar al original' }),
+    ).rejects.toBeInstanceOf(ProductAlreadyExistsError)
+    expect(harness.products.size).toBe(1)
+    await expect(harness.get.execute(command.sku, true)).resolves.toMatchObject({
+      name: command.name,
+    })
+  })
+
+  it('solo admite una de dos creaciones concurrentes del mismo SKU', async () => {
+    const harness = buildHarness()
+
+    const results = await Promise.allSettled([
+      harness.create.execute({ ...command, name: 'Primer candidato' }),
+      harness.create.execute({ ...command, name: 'Segundo candidato' }),
+    ])
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1)
     expect(harness.products.size).toBe(1)
   })
 

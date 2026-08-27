@@ -25,6 +25,17 @@ export class MongoProductRepository implements ProductRepositoryPort {
     this.products = db.collection<ProductDocument>('products')
   }
 
+  async create(product: Product): Promise<boolean> {
+    const document = toDocument(product.toSnapshot())
+    const result = await this.products.updateOne(
+      { _id: document._id },
+      { $setOnInsert: document },
+      { upsert: true },
+    )
+
+    return result.upsertedCount === 1
+  }
+
   /**
    * Guarda el agregado entero.
    *
