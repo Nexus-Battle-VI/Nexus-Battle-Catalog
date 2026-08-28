@@ -117,16 +117,11 @@ export const migrateToLatest = async (db: Db): Promise<MigrationOutcome> => {
       // clave duplicada y no se ejecuta `up` dos veces.
       await registry.insertOne({ _id: migration.name, startedAt: new Date() })
 
-      try {
-        await migration.up(db)
-      } catch (error: unknown) {
-        // Se retira la reclamacion para que un reintento pueda seguir: si se
-        // dejara puesta, la comprobacion de arriba bloquearia para siempre una
-        // migracion que en realidad no llego a aplicarse.
-        await registry.deleteOne({ _id: migration.name })
-
-        throw error
-      }
+      // Las operaciones de esquema de MongoDB no son transaccionales. Si `up`
+      // falla, la reclamacion queda incompleta deliberadamente: la siguiente
+      // ejecucion se detendra y exigira inspeccionar el esquema en vez de
+      // reintentarlo a ciegas sobre un estado desconocido.
+      await migration.up(db)
 
       await registry.updateOne({ _id: migration.name }, { $set: { completedAt: new Date() } })
       applied.push(migration.name)
