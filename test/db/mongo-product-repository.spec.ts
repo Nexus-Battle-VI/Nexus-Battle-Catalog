@@ -13,6 +13,8 @@ import {
   migrateToLatest,
 } from '../../src/infrastructure/persistence/database'
 import { MongoProductRepository } from '../../src/adapters/outbound/persistence/MongoProductRepository'
+import { up as createProductsCollection } from '../../src/adapters/outbound/persistence/migrations/001-products'
+import { up as addPremiumFields } from '../../src/adapters/outbound/persistence/migrations/002-premium-products'
 import { Product, ProductStatus } from '../../src/domain/entities/Product'
 import { Category, Money, ProductName, Sku } from '../../src/domain/value-objects/catalog-values'
 
@@ -281,8 +283,47 @@ describe('MongoProductRepository', () => {
       }
     }
 
-    it('admite un documento con la forma correcta', async () => {
+    it('admite un documento legado sin campos Premium', async () => {
       await expect(escribir(valido())).resolves.toBeDefined()
+    })
+
+    it('admite un producto explicitamente no Premium sin precio real', async () => {
+      await expect(escribir({ ...valido(), isPremium: false })).resolves.toBeDefined()
+    })
+
+    it('admite un producto Premium con precio real positivo y moneda valida', async () => {
+      await expect(
+        escribir({
+          ...valido(),
+          isPremium: true,
+          realMoneyPriceAmount: Long.fromNumber(999),
+          realMoneyPriceCurrency: 'USD',
+        }),
+      ).resolves.toBeDefined()
+    })
+
+    it.each([
+      ['Premium sin precio real', { isPremium: true }],
+      [
+        'Premium con importe real cero',
+        {
+          isPremium: true,
+          realMoneyPriceAmount: Long.fromNumber(0),
+          realMoneyPriceCurrency: 'USD',
+        },
+      ],
+      [
+        'no Premium con precio real',
+        {
+          isPremium: false,
+          realMoneyPriceAmount: Long.fromNumber(999),
+          realMoneyPriceCurrency: 'USD',
+        },
+      ],
+      ['solo con importe real', { realMoneyPriceAmount: Long.fromNumber(999) }],
+      ['solo con moneda real', { realMoneyPriceCurrency: 'USD' }],
+    ])('rechaza una configuracion %s', async (_caso, premium) => {
+      await expect(escribir({ ...valido(), ...premium })).rejects.toThrow()
     })
 
     it('rechaza un estado que no pertenece al vocabulario', async () => {
@@ -331,6 +372,39 @@ describe('MongoProductRepository', () => {
       delete incompleto.priceCurrency
 
       await expect(escribir(incompleto)).rejects.toThrow()
+    })
+
+    it('aplica la correccion a una base que ya registro las migraciones 001 y 002', async () => {
+      const upgradeDb = client.db('catalog-upgrade-bug-275')
+      const upgradeProducts = upgradeDb.collection<DocumentoDePrueba>('products')
+      const upgradeMigrations = upgradeDb.collection<{
+        _id: string
+        startedAt: Date
+        completedAt: Date
+      }>('_migrations')
+      const completedAt = new Date()
+
+      try {
+        await createProductsCollection(upgradeDb)
+        await addPremiumFields(upgradeDb)
+        await upgradeMigrations.insertMany([
+          { _id: '001-products', startedAt: completedAt, completedAt },
+          { _id: '002-premium-products', startedAt: completedAt, completedAt },
+        ])
+
+        const invalidPremium = { ...valido(), isPremium: true }
+
+        await expect(upgradeProducts.insertOne(invalidPremium)).resolves.toBeDefined()
+        await upgradeProducts.deleteOne({ _id: invalidPremium._id })
+
+        const { applied, error } = await migrateToLatest(upgradeDb)
+
+        expect(error).toBeUndefined()
+        expect(applied).toEqual(['003-premium-product-validation'])
+        await expect(upgradeProducts.insertOne(invalidPremium)).rejects.toThrow()
+      } finally {
+        await upgradeDb.dropDatabase()
+      }
     })
   })
 
