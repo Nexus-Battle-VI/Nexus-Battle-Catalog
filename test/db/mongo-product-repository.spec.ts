@@ -90,6 +90,35 @@ describe('MongoProductRepository', () => {
     expect(found?.toSnapshot()).toEqual(product.toSnapshot())
   })
 
+  it('crea un SKU una sola vez sin sobrescribir el documento existente', async () => {
+    const original = buildProduct('armas', 100)
+    const duplicate = Product.draft({
+      sku: original.sku,
+      name: ProductName.create('Producto duplicado'),
+      category: Category.create('armaduras'),
+      price: Money.create(200, 'COP'),
+    })
+
+    expect(await repository.create(original)).toBe(true)
+    expect(await repository.create(duplicate)).toBe(false)
+    expect((await repository.findBySku(original.sku))?.toSnapshot()).toEqual(original.toSnapshot())
+  })
+
+  it('admite exactamente una de dos creaciones concurrentes del mismo SKU', async () => {
+    const first = buildProduct('armas', 100)
+    const second = Product.draft({
+      sku: first.sku,
+      name: ProductName.create('Segundo candidato'),
+      category: Category.create('armaduras'),
+      price: Money.create(200, 'COP'),
+    })
+
+    const results = await Promise.all([repository.create(first), repository.create(second)])
+
+    expect(results.filter(Boolean)).toHaveLength(1)
+    expect(await repository.exists(first.sku)).toBe(true)
+  })
+
   it('devuelve null cuando el producto no existe', async () => {
     expect(await repository.findBySku(Sku.create('sku-inexistente'))).toBeNull()
   })

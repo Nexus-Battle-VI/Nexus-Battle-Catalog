@@ -40,10 +40,6 @@ export class CreateProduct {
   async execute(command: CreateProductCommand): Promise<ProductDto> {
     const sku = Sku.create(command.sku)
 
-    if (await this.deps.products.exists(sku)) {
-      throw new ProductAlreadyExistsError(sku.value)
-    }
-
     const product = Product.draft({
       sku,
       name: ProductName.create(command.name),
@@ -51,7 +47,9 @@ export class CreateProduct {
       price: Money.create(command.priceAmount, command.priceCurrency),
     })
 
-    await this.deps.products.save(product)
+    if (!(await this.deps.products.create(product))) {
+      throw new ProductAlreadyExistsError(sku.value)
+    }
 
     return toProductDto(product.toSnapshot())
   }

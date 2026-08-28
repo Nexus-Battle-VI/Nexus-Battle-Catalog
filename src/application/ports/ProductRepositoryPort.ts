@@ -22,6 +22,8 @@ export interface ProductQuery {
  * contrato, incluido el de no filtrar al almacen una mutacion sin guardar.
  */
 export interface ProductRepositoryPort {
+  /** Crea el producto solo si el SKU no existe. Devuelve `false` ante conflicto. */
+  create(product: Product): Promise<boolean>
   save(product: Product): Promise<void>
   findBySku(sku: Sku): Promise<Product | null>
   exists(sku: Sku): Promise<boolean>

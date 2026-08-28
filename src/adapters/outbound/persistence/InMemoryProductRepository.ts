@@ -17,6 +17,16 @@ import type {
 export class InMemoryProductRepository implements ProductRepositoryPort {
   private readonly bySku = new Map<string, ProductSnapshot>()
 
+  create(product: Product): Promise<boolean> {
+    if (this.bySku.has(product.sku.value)) {
+      return Promise.resolve(false)
+    }
+
+    this.bySku.set(product.sku.value, product.toSnapshot())
+
+    return Promise.resolve(true)
+  }
+
   save(product: Product): Promise<void> {
     this.bySku.set(product.sku.value, product.toSnapshot())
 
