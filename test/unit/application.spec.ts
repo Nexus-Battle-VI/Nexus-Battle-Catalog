@@ -436,11 +436,15 @@ describe('observabilidad, salud y utilidades', () => {
     expect(lines).toHaveLength(4)
   })
 
-  it('las sondas distinguen exito, fallo y excepcion', () => {
+  it('las sondas distinguen exito, fallo y excepcion', async () => {
     expect(buildLiveness()).toEqual({ status: 'ok', checks: {} })
-    expect(buildReadiness([{ name: 'repo', check: (): boolean => true }]).status).toBe('ok')
-    expect(buildReadiness([{ name: 'repo', check: (): boolean => false }]).status).toBe('error')
-    expect(
+    await expect(
+      buildReadiness([{ name: 'repo', check: (): Promise<boolean> => Promise.resolve(true) }]),
+    ).resolves.toMatchObject({ status: 'ok' })
+    await expect(
+      buildReadiness([{ name: 'repo', check: (): Promise<boolean> => Promise.resolve(false) }]),
+    ).resolves.toMatchObject({ status: 'error' })
+    await expect(
       buildReadiness([
         {
           name: 'repo',
@@ -449,7 +453,7 @@ describe('observabilidad, salud y utilidades', () => {
           },
         },
       ]),
-    ).toEqual({ status: 'error', checks: { repo: 'error' } })
+    ).resolves.toEqual({ status: 'error', checks: { repo: 'error' } })
     expect(buildVersion({ service: 'a', version: 'b', nodeEnv: 'c' })).toEqual({
       service: 'a',
       version: 'b',

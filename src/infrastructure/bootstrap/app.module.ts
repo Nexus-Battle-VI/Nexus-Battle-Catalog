@@ -198,7 +198,7 @@ export const LOGGER = Symbol('Logger')
         // responde, la sonda falla. No se declara `ok` de forma incondicional.
         {
           name: 'products-repository',
-          check: (): boolean => typeof products.search === 'function',
+          check: (): Promise<boolean> => products.isAvailable(),
         },
       ],
       inject: [PRODUCT_REPOSITORY],

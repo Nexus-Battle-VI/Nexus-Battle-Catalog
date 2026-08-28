@@ -26,6 +26,8 @@ export interface ProductRepositoryPort {
   findBySku(sku: Sku): Promise<Product | null>
   exists(sku: Sku): Promise<boolean>
   search(query: ProductQuery): Promise<readonly Product[]>
+  /** Comprueba que el almacenamiento puede atender operaciones reales. */
+  isAvailable(): Promise<boolean>
 }
 
 export const PRODUCT_REPOSITORY = Symbol('ProductRepositoryPort')

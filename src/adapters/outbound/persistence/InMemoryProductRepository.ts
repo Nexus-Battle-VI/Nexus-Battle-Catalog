@@ -47,6 +47,10 @@ export class InMemoryProductRepository implements ProductRepositoryPort {
     return Promise.resolve(found)
   }
 
+  isAvailable(): Promise<boolean> {
+    return Promise.resolve(true)
+  }
+
   get size(): number {
     return this.bySku.size
   }
