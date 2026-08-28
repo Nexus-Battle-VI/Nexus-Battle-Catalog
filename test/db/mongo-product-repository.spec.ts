@@ -17,6 +17,7 @@ import { up as createProductsCollection } from '../../src/adapters/outbound/pers
 import { up as addPremiumFields } from '../../src/adapters/outbound/persistence/migrations/002-premium-products'
 import { Product, ProductStatus } from '../../src/domain/entities/Product'
 import { Category, Money, ProductName, Sku } from '../../src/domain/value-objects/catalog-values'
+import { closeMongoTestResources } from '../support/mongo-test-resources'
 
 /**
  * Adaptador de MongoDB contra un motor REAL, en contenedor.
@@ -28,8 +29,8 @@ import { Category, Money, ProductName, Sku } from '../../src/domain/value-object
  * esquema equivocado.
  */
 describe('MongoProductRepository', () => {
-  let container: StartedMongoDBContainer
-  let client: MongoClient
+  let container: StartedMongoDBContainer | undefined
+  let client: MongoClient | undefined
   let db: Db
   let repository: MongoProductRepository
 
@@ -67,8 +68,7 @@ describe('MongoProductRepository', () => {
   }, 180_000)
 
   afterAll(async () => {
-    await client.close()
-    await container.stop()
+    await closeMongoTestResources({ client, container })
   })
 
   beforeEach(() => {
@@ -375,7 +375,7 @@ describe('MongoProductRepository', () => {
     })
 
     it('aplica la correccion a una base que ya registro las migraciones 001 y 002', async () => {
-      const upgradeDb = client.db('catalog-upgrade-bug-275')
+      const upgradeDb = client!.db('catalog-upgrade-bug-275')
       const upgradeProducts = upgradeDb.collection<DocumentoDePrueba>('products')
       const upgradeMigrations = upgradeDb.collection<{
         _id: string
