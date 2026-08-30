@@ -36,6 +36,11 @@ const IDENTITIES: Readonly<Record<string, VerifiedIdentity>> = {
     email: null,
     roles: new Set([Role.Player, Role.Administrator]),
   },
+  'token-super-administrador': {
+    subject: 'sujeto-super-admin',
+    email: null,
+    roles: new Set([Role.Player, Role.SuperAdministrator]),
+  },
 }
 
 const stubVerifier: TokenVerifierPort = {
@@ -140,6 +145,10 @@ describe('API de catalogo con autenticacion activa', () => {
 
     it('permite crear un producto a un administrador', async () => {
       expect((await crear('token-administrador')).status).toBe(201)
+    })
+
+    it('un SUPER_ADMINISTRATOR puro satisface la gestion ADMINISTRATOR', async () => {
+      expect((await crear('token-super-administrador')).status).toBe(201)
     })
   })
 
