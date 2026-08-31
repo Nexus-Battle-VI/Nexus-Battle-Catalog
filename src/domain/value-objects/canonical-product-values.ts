@@ -188,3 +188,47 @@ export class ProductPricing {
     return new ProductPricing(params)
   }
 }
+
+/** Descripción funcional obligatoria del producto canónico. */
+export class ProductDescription {
+  readonly value: string
+
+  private constructor(value: string) {
+    this.value = value
+  }
+
+  static create(raw: string): ProductDescription {
+    const normalized = raw.trim()
+
+    if (normalized.length === 0) {
+      throw new DomainError('La descripcion del producto es obligatoria.')
+    }
+
+    return new ProductDescription(normalized)
+  }
+}
+
+/** Referencia URI al recurso de imagen; Catalog no almacena el binario. */
+export class ProductImageUrl {
+  readonly value: string
+
+  private constructor(value: string) {
+    this.value = value
+  }
+
+  static create(raw: string): ProductImageUrl {
+    const normalized = raw.trim()
+
+    if (normalized.length === 0) {
+      throw new DomainError('imageUrl es obligatorio.')
+    }
+
+    try {
+      new URL(normalized)
+    } catch {
+      throw new DomainError('imageUrl debe ser una URI valida.')
+    }
+
+    return new ProductImageUrl(normalized)
+  }
+}
