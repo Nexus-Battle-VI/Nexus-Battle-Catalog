@@ -3,6 +3,7 @@ import { MongoClient, type Db } from 'mongodb'
 import * as migration001 from '../../adapters/outbound/persistence/migrations/001-products'
 import * as migration002 from '../../adapters/outbound/persistence/migrations/002-premium-products'
 import * as migration003 from '../../adapters/outbound/persistence/migrations/003-premium-product-validation'
+import * as migration004 from '../../adapters/outbound/persistence/migrations/004-canonical-products'
 
 export interface DatabaseOptions {
   readonly uri: string
@@ -55,6 +56,7 @@ const MIGRATIONS: readonly { readonly name: string; readonly up: (db: Db) => Pro
   { name: '001-products', up: migration001.up },
   { name: '002-premium-products', up: migration002.up },
   { name: '003-premium-product-validation', up: migration003.up },
+  { name: '004-canonical-products', up: migration004.up },
 ]
 
 const REGISTRY = '_migrations'
