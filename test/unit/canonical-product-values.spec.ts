@@ -89,6 +89,7 @@ describe('PrintRun', () => {
 
   it.each([
     [LifecycleStatus.Suspended, PrintRunMode.Unique, 'suspendido'],
+    [LifecycleStatus.Suspended, PrintRunMode.Limited, 'suspendido'],
     [LifecycleStatus.Suspended, PrintRunMode.Infinite, 'suspendido'],
     [LifecycleStatus.Active, PrintRunMode.Unique, 'único'],
     [LifecycleStatus.Active, PrintRunMode.Limited, 'activo'],

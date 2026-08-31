@@ -3,9 +3,9 @@ import { DomainError } from '../errors/DomainError'
 /**
  * Referencia comercial de un producto.
  *
- * Es el identificador natural del catalogo y el que usan los demas contextos
- * (Player/Inventory y Commerce) para referirse a un producto sin conocer su
- * modelo interno.
+ * En el modelo heredado funciona como clave del documento y referencia entre
+ * contextos. En el contrato canónico de ADR-013 es únicamente un alias temporal:
+ * `ProductId` es la identidad y las relaciones nuevas no deben usar SKU.
  */
 export class Sku {
   private static readonly PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/
