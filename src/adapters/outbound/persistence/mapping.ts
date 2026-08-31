@@ -29,6 +29,8 @@ export class PersistenceMappingError extends Error {
  */
 export interface ProductDocument {
   readonly _id: string
+  /** Alias adicional durante la coexistencia con el documento canónico. */
+  readonly sku?: string
   readonly name: string
   readonly category: string
   /**
@@ -120,6 +122,7 @@ export const toDocument = (snapshot: ProductSnapshot): ProductDocument => {
 
   return {
     _id: snapshot.sku,
+    sku: snapshot.sku,
     name: snapshot.name,
     category: snapshot.category,
     priceAmount: Long.fromNumber(snapshot.priceAmount),

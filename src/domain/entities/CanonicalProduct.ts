@@ -42,7 +42,7 @@ export class CanonicalProduct {
   readonly type: ProductType
   readonly attributes: ProductAttributes
   readonly printRun: PrintRun
-  readonly lifecycleStatus = LifecycleStatus.Active
+  readonly lifecycleStatus: LifecycleStatus
   readonly creditsPrice: CreditsPrice
   readonly premium: boolean
   readonly realMoneyPrice: Money | null
@@ -60,6 +60,8 @@ export class CanonicalProduct {
     printRun: PrintRun
     pricing: ProductPricing
     createdAt: Date
+    lifecycleStatus: LifecycleStatus
+    updatedAt: Date
   }) {
     this.productId = params.productId
     this.sku = params.sku
@@ -73,8 +75,9 @@ export class CanonicalProduct {
     this.creditsPrice = params.pricing.creditsPrice
     this.premium = params.pricing.premium
     this.realMoneyPrice = params.pricing.realMoneyPrice
+    this.lifecycleStatus = params.lifecycleStatus
     this.createdAt = new Date(params.createdAt)
-    this.updatedAt = new Date(params.createdAt)
+    this.updatedAt = new Date(params.updatedAt)
   }
 
   static create(params: {
@@ -88,6 +91,27 @@ export class CanonicalProduct {
     printRun: PrintRun
     pricing: ProductPricing
     createdAt: Date
+  }): CanonicalProduct {
+    return new CanonicalProduct({
+      ...params,
+      lifecycleStatus: LifecycleStatus.Active,
+      updatedAt: params.createdAt,
+    })
+  }
+
+  static restore(params: {
+    productId: ProductId
+    sku: Sku
+    name: ProductName
+    imageUrl: ProductImageUrl
+    description: ProductDescription
+    type: ProductType
+    attributes: ProductAttributes
+    printRun: PrintRun
+    pricing: ProductPricing
+    lifecycleStatus: LifecycleStatus
+    createdAt: Date
+    updatedAt: Date
   }): CanonicalProduct {
     return new CanonicalProduct(params)
   }

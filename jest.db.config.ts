@@ -28,6 +28,7 @@ const config: Config = {
   // Entre las dos configuraciones no queda codigo sin medir.
   collectCoverageFrom: [
     'src/adapters/outbound/persistence/MongoProductRepository.ts',
+    'src/adapters/outbound/persistence/MongoCanonicalProductRepository.ts',
     'src/infrastructure/persistence/**/*.ts',
     '!src/infrastructure/persistence/migrate.ts',
   ],

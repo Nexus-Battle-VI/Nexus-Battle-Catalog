@@ -1,4 +1,4 @@
-import type { Collection, Db, Filter } from 'mongodb'
+import { MongoServerError, type Collection, type Db, type Filter } from 'mongodb'
 
 import { Product } from '../../../domain/entities/Product'
 import { Category, Money, ProductName, Sku } from '../../../domain/value-objects/catalog-values'
@@ -27,13 +27,29 @@ export class MongoProductRepository implements ProductRepositoryPort {
 
   async create(product: Product): Promise<boolean> {
     const document = toDocument(product.toSnapshot())
-    const result = await this.products.updateOne(
-      { _id: document._id },
-      { $setOnInsert: document },
-      { upsert: true },
-    )
 
-    return result.upsertedCount === 1
+    try {
+      const result = await this.products.updateOne(
+        { _id: document._id },
+        { $setOnInsert: document },
+        { upsert: true },
+      )
+
+      return result.upsertedCount === 1
+    } catch (error: unknown) {
+      // Durante la transición, un documento canónico puede ocupar el mismo
+      // alias aunque su `_id` sea productId. El puerto heredado expresa esa
+      // colisión con `false`, igual que cuando el propio `_id` ya existe.
+      if (
+        error instanceof MongoServerError &&
+        error.code === 11000 &&
+        (error.keyPattern as Record<string, unknown> | undefined)?.sku !== undefined
+      ) {
+        return false
+      }
+
+      throw error
+    }
   }
 
   /**
@@ -90,7 +106,12 @@ export class MongoProductRepository implements ProductRepositoryPort {
     // documento son de solo lectura, y eso es deliberado.
     const filter: Filter<ProductDocument> = {
       ...(query.category === undefined ? {} : { category: query.category.value }),
-      ...(query.includeHidden === true ? {} : { status: ProductStatus.Published }),
+      // La colección también contiene documentos canónicos. Incluso cuando se
+      // piden ocultos, este repositorio heredado solo puede hidratar documentos
+      // que declaren el estado legado; la ruta canónica usa su propio adaptador.
+      ...(query.includeHidden === true
+        ? { status: { $exists: true } }
+        : { status: ProductStatus.Published }),
     }
 
     const documents = await this.products.find(filter).sort({ _id: 1 }).toArray()
