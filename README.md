@@ -113,9 +113,11 @@ Es un paso explícito del despliegue, y el motivo es concreto: migrar desde el a
 
 MongoDB no trae migrador, así que hay uno propio y deliberadamente pequeño: una colección `_migrations` con el nombre como `_id`. Esa unicidad da **exclusión mutua real**, porque la migración se reclama antes de ejecutarse. Si el proceso muere a medias, la siguiente ejecución se niega a continuar y dice cuál quedó incompleta.
 
-### El SKU es la clave del documento
+### El SKU es la clave del documento heredado
 
-Ya identifica al producto de forma única en el dominio, así que MongoDB garantiza esa unicidad **sin un índice adicional**: un segundo producto con el mismo SKU no se puede ni escribir.
+En el modelo actualmente desplegado, el SKU identifica al producto y se usa como `_id`, así que MongoDB garantiza esa unicidad **sin un índice adicional**: un segundo producto con el mismo SKU no se puede ni escribir.
+
+Esta es una descripción del runtime heredado, no del modelo objetivo. ADR-013 establece `productId` como identidad canónica y conserva SKU únicamente como alias temporal durante la migración aditiva. Hasta implementar la persistencia canónica, las rutas y documentos actuales continúan operando por SKU.
 
 ### El dinero se guarda como `Long`
 
