@@ -22,6 +22,11 @@ export const ANONYMOUS_IDENTITY: VerifiedIdentity = {
   subject: 'anonymous',
   email: null,
   roles: new Set(ALL_ROLES),
+  // Sin testimonio no hay `jti` ni `exp` que extraer. Fingirlos permitiria que
+  // una operacion administrativa se diera por respaldada por un segundo factor
+  // que nadie supero.
+  jti: null,
+  expiresAt: null,
 }
 
 /**

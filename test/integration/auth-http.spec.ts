@@ -12,6 +12,10 @@ import {
   type TokenVerifierPort,
   type VerifiedIdentity,
 } from '../../src/application/ports/TokenVerifierPort'
+import {
+  MFA_EVIDENCE_VERIFIER,
+  MfaEvidenceOutcome,
+} from '../../src/application/ports/MfaEvidenceVerifierPort'
 
 /**
  * Integracion con la autenticacion ACTIVA.
@@ -25,21 +29,33 @@ import {
  * producto, publicarlo o cambiarle el precio.
  */
 const IDENTITIES: Readonly<Record<string, VerifiedIdentity>> = {
-  'token-jugador': { subject: 'sujeto-jugador', email: null, roles: new Set([Role.Player]) },
+  'token-jugador': {
+    subject: 'sujeto-jugador',
+    email: null,
+    roles: new Set([Role.Player]),
+    jti: 'jti-jugador',
+    expiresAt: new Date(Date.now() + 900_000),
+  },
   'token-moderador': {
     subject: 'sujeto-moderador',
     email: null,
     roles: new Set([Role.Player, Role.Moderator]),
+    jti: 'jti-moderador',
+    expiresAt: new Date(Date.now() + 900_000),
   },
   'token-administrador': {
     subject: 'sujeto-admin',
     email: null,
     roles: new Set([Role.Player, Role.Administrator]),
+    jti: 'jti-admin',
+    expiresAt: new Date(Date.now() + 900_000),
   },
   'token-super-administrador': {
     subject: 'sujeto-super-admin',
     email: null,
     roles: new Set([Role.Player, Role.SuperAdministrator]),
+    jti: 'jti-super-admin',
+    expiresAt: new Date(Date.now() + 900_000),
   },
 }
 
@@ -68,9 +84,17 @@ describe('API de catalogo con autenticacion activa', () => {
     process.env.COGNITO_USER_POOL_ID = 'us-east-1_pruebas'
     process.env.COGNITO_CLIENT_ID = 'cliente-de-pruebas'
 
+    // Este bloque comprueba RBAC, no la evidencia de segundo factor: el
+    // verificador responde siempre que la hay, para que un fallo aqui signifique
+    // un fallo de roles y no de otra cosa. El comportamiento de la evidencia
+    // tiene su propio fichero, `mfa-evidence-http.spec.ts`.
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(TOKEN_VERIFIER)
       .useValue(stubVerifier)
+      .overrideProvider(MFA_EVIDENCE_VERIFIER)
+      .useValue({
+        verify: (): Promise<MfaEvidenceOutcome> => Promise.resolve(MfaEvidenceOutcome.Valid),
+      })
       .compile()
 
     app = moduleRef.createNestApplication()
