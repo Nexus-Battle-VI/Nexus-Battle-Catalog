@@ -1,5 +1,6 @@
 import { Module, type CanActivate } from '@nestjs/common'
 import { APP_GUARD, Reflector } from '@nestjs/core'
+import type { Db } from 'mongodb'
 
 import { ProductsController } from '../../adapters/inbound/http/products.controller'
 import { MfaEvidenceGuard } from '../../adapters/inbound/http/auth/mfa-evidence.guard'
@@ -9,6 +10,7 @@ import {
   MfaEvidenceOutcome,
   type MfaEvidenceVerifierPort,
 } from '../../application/ports/MfaEvidenceVerifierPort'
+import { CanonicalProductsController } from '../../adapters/inbound/http/canonical-products.controller'
 import { HealthController } from '../../adapters/inbound/http/health.controller'
 import {
   ARCHIVE_PRODUCT,
@@ -17,6 +19,7 @@ import {
   GET_PRODUCT,
   LIST_PRODUCTS,
   PUBLISH_PRODUCT,
+  CREATE_CANONICAL_PRODUCT,
 } from '../../adapters/inbound/http/tokens'
 import { READINESS_CHECKS, VERSION_REPORT } from '../../adapters/inbound/http/tokens.health'
 
@@ -28,14 +31,19 @@ import {
   ListProducts,
   PublishProduct,
 } from '../../application/use-cases/ProductUseCases'
+import { CreateCanonicalProduct } from '../../application/use-cases/CreateCanonicalProduct'
 import { PRODUCT_REPOSITORY } from '../../application/ports/ProductRepositoryPort'
 import { CLOCK } from '../../application/ports/ClockPort'
 import type { ProductRepositoryPort } from '../../application/ports/ProductRepositoryPort'
 import type { ClockPort } from '../../application/ports/ClockPort'
 
 import { InMemoryProductRepository } from '../../adapters/outbound/persistence/InMemoryProductRepository'
+import { InMemoryCanonicalProductRepository } from '../../adapters/outbound/persistence/InMemoryCanonicalProductRepository'
 import { MongoProductRepository } from '../../adapters/outbound/persistence/MongoProductRepository'
+import { MongoCanonicalProductRepository } from '../../adapters/outbound/persistence/MongoCanonicalProductRepository'
 import { SystemClock } from '../../adapters/outbound/system/SystemClock'
+import { UuidGenerator } from '../../adapters/outbound/system/UuidGenerator'
+import { HeroSubtypeRegistryV1 } from '../../adapters/outbound/registry/HeroSubtypeRegistryV1'
 
 import { createMongoClient, databaseOf } from '../persistence/database'
 import { createLogger, type Logger } from '../observability/logger'
@@ -47,10 +55,20 @@ import { AnonymousIdentityGuard } from '../../adapters/inbound/http/auth/anonymo
 import { TOKEN_VERIFIER } from '../../application/ports/TokenVerifierPort'
 import type { TokenVerifierPort } from '../../application/ports/TokenVerifierPort'
 import { CognitoTokenVerifier } from '../../adapters/outbound/identity/CognitoTokenVerifier'
+import { ID_GENERATOR } from '../../application/ports/IdGeneratorPort'
+import {
+  CANONICAL_PRODUCT_REPOSITORY,
+  CANONICAL_PRODUCT_WRITE,
+  HERO_SUBTYPE_REGISTRY,
+  PRODUCT_REFERENCE_QUERY,
+  type CanonicalProductRepositoryPort,
+} from '../../application/ports/CanonicalProductPorts'
+import type { IdGeneratorPort } from '../../application/ports/IdGeneratorPort'
 import type { ReadinessCheck, VersionReport } from '../health/health'
 
 export const APP_CONFIG = Symbol('AppConfig')
 export const LOGGER = Symbol('Logger')
+const CATALOG_DATABASE = Symbol('CatalogDatabase')
 
 /**
  * Raiz de composicion.
@@ -61,7 +79,7 @@ export const LOGGER = Symbol('Logger')
  * framework.
  */
 @Module({
-  controllers: [ProductsController, HealthController],
+  controllers: [ProductsController, CanonicalProductsController, HealthController],
   providers: [
     {
       provide: APP_CONFIG,
@@ -78,40 +96,58 @@ export const LOGGER = Symbol('Logger')
       inject: [APP_CONFIG],
     },
     {
-      provide: PRODUCT_REPOSITORY,
-      useFactory: async (config: AppConfig, logger: Logger): Promise<ProductRepositoryPort> => {
-        if (config.persistenceDriver !== PersistenceDriver.Mongo) {
-          logger.warn('in_memory_persistence', {
-            detail: 'PERSISTENCE_DRIVER=memory: el estado se pierde al reiniciar el servicio.',
-          })
+      provide: CATALOG_DATABASE,
+      useFactory: async (config: AppConfig, logger: Logger): Promise<Db | null> => {
+        if (config.persistenceDriver !== PersistenceDriver.Mongo) return null
 
-          return new InMemoryProductRepository()
-        }
-
-        // `loadConfig` ya garantiza que MONGODB_URI existe con este driver: un
-        // servicio mal configurado no debe arrancar y aparentar salud.
         if (config.databaseUrl === null) {
           throw new Error('MONGODB_URI es obligatorio con PERSISTENCE_DRIVER=mongo.')
         }
 
         const options = { uri: config.databaseUrl }
         const client = createMongoClient(options)
-
-        // Se conecta AQUI, y no de forma perezosa en la primera consulta. El
-        // driver permite lo segundo, pero entonces un motor inalcanzable se
-        // manifestaria como un error de peticion en vez de como lo que es: un
-        // servicio que no deberia haber arrancado.
         await client.connect()
-
         logger.info('mongo_persistence', { detail: 'Adaptador MongoDB activo.' })
 
-        // El esquema NO se migra aqui. Migrar al arrancar hace que varias
-        // replicas migren a la vez y que una migracion rota deje el servicio en
-        // bucle de reinicio. Es un paso explicito: `npm run migrate`.
-        return new MongoProductRepository(databaseOf(client, options))
+        return databaseOf(client, options)
       },
       inject: [APP_CONFIG, LOGGER],
     },
+    {
+      provide: PRODUCT_REPOSITORY,
+      useFactory: (
+        config: AppConfig,
+        logger: Logger,
+        database: Db | null,
+      ): ProductRepositoryPort => {
+        if (config.persistenceDriver !== PersistenceDriver.Mongo) {
+          logger.warn('in_memory_persistence', {
+            detail: 'PERSISTENCE_DRIVER=memory: el estado se pierde al reiniciar el servicio.',
+          })
+          return new InMemoryProductRepository()
+        }
+
+        if (database === null) throw new Error('MongoDB no se inicializo.')
+        return new MongoProductRepository(database)
+      },
+      inject: [APP_CONFIG, LOGGER, CATALOG_DATABASE],
+    },
+    {
+      provide: CANONICAL_PRODUCT_REPOSITORY,
+      useFactory: (config: AppConfig, database: Db | null): CanonicalProductRepositoryPort => {
+        if (config.persistenceDriver !== PersistenceDriver.Mongo) {
+          return new InMemoryCanonicalProductRepository()
+        }
+
+        if (database === null) throw new Error('MongoDB no se inicializo.')
+        return new MongoCanonicalProductRepository(database)
+      },
+      inject: [APP_CONFIG, CATALOG_DATABASE],
+    },
+    { provide: CANONICAL_PRODUCT_WRITE, useExisting: CANONICAL_PRODUCT_REPOSITORY },
+    { provide: PRODUCT_REFERENCE_QUERY, useExisting: CANONICAL_PRODUCT_REPOSITORY },
+    { provide: HERO_SUBTYPE_REGISTRY, useFactory: () => new HeroSubtypeRegistryV1() },
+    { provide: ID_GENERATOR, useFactory: (): IdGeneratorPort => new UuidGenerator() },
     {
       provide: TOKEN_VERIFIER,
       useFactory: (config: AppConfig, logger: Logger): TokenVerifierPort => {
@@ -221,6 +257,30 @@ export const LOGGER = Symbol('Logger')
       useFactory: (products: ProductRepositoryPort, clock: ClockPort): CreateProduct =>
         new CreateProduct({ products, clock }),
       inject: [PRODUCT_REPOSITORY, CLOCK],
+    },
+    {
+      provide: CREATE_CANONICAL_PRODUCT,
+      useFactory: (
+        products: CanonicalProductRepositoryPort,
+        heroSubtypes: HeroSubtypeRegistryV1,
+        productReferences: CanonicalProductRepositoryPort,
+        idGenerator: IdGeneratorPort,
+        clock: ClockPort,
+      ): CreateCanonicalProduct =>
+        new CreateCanonicalProduct({
+          products,
+          heroSubtypes,
+          productReferences,
+          idGenerator,
+          clock,
+        }),
+      inject: [
+        CANONICAL_PRODUCT_WRITE,
+        HERO_SUBTYPE_REGISTRY,
+        PRODUCT_REFERENCE_QUERY,
+        ID_GENERATOR,
+        CLOCK,
+      ],
     },
     {
       provide: PUBLISH_PRODUCT,

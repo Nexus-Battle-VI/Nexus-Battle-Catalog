@@ -60,6 +60,14 @@ jobs:
       - name: Pruebas de integracion
         run: npm run test:integration
 
+      # El contrato vive en Infrastructure. Esta verificación falla si la
+      # especificación aceptada cambia sin que Catalog conserve su ruta,
+      # operación, seguridad y catálogo de respuestas compatible.
+      - name: Verificar contrato OpenAPI contra Infrastructure
+        env:
+          VERIFY_INFRASTRUCTURE_OPENAPI: 'true'
+        run: npm run test:integration -- --runInBand --testPathPatterns=openapi-contract.spec.ts
+
       # Estas pruebas levantan MongoDB en un contenedor con Testcontainers y
       # ejercitan el adaptador contra el motor REAL. Estan fuera de `npm test`
       # para que quien trabaja en el dominio no necesite Docker, pero el CI las

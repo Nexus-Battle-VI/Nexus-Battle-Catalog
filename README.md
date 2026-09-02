@@ -52,10 +52,11 @@ La comprobacion de firma la hace [`aws-jwt-verify`](https://github.com/awslabs/a
 | Ruta                                           | Proteccion                                                      |
 | ---------------------------------------------- | --------------------------------------------------------------- |
 | `GET /api/products` y `GET /api/products/:sku` | **Publica.** El catalogo publicado es informacion de escaparate |
-| `POST /api/products`                           | Rol **`ADMINISTRATOR`**                                         |
-| `POST /api/products/:sku/publication`          | Rol **`ADMINISTRATOR`**                                         |
-| `POST /api/products/:sku/archival`             | Rol **`ADMINISTRATOR`**                                         |
-| `POST /api/products/:sku/price`                | Rol **`ADMINISTRATOR`**                                         |
+| `POST /api/products`                           | Rol **`ADMINISTRATOR`** y TOTP de aplicacion autenticadora      |
+| `POST /api/products/:sku/publication`          | Rol **`ADMINISTRATOR`** y TOTP de aplicacion autenticadora      |
+| `POST /api/products/:sku/archival`             | Rol **`ADMINISTRATOR`** y TOTP de aplicacion autenticadora      |
+| `POST /api/products/:sku/price`                | Rol **`ADMINISTRATOR`** y TOTP de aplicacion autenticadora      |
+| `POST /api/v1/catalog/products`                | Rol **`ADMINISTRATOR`** y TOTP de aplicacion autenticadora      |
 | `GET /api/health/*`                            | **Publica.** Un orquestador no lleva testimonio                 |
 
 Antes de esto, **cualquiera podia crear un producto, publicarlo o cambiarle el precio**.
@@ -68,6 +69,14 @@ Con `NODE_ENV=production` y `AUTH_MODE=disabled`, `loadConfig` lanza `Configurat
 | -------------------- | --------------------------------------------------------------------------- |
 | `AUTH_MODE=disabled` | Se atribuye la **identidad anonima** a toda peticion. Solo desarrollo local |
 | `AUTH_MODE=jwt`      | Exige `COGNITO_USER_POOL_ID` y `COGNITO_CLIENT_ID`                          |
+
+Con autenticacion JWT, las mutaciones administrativas consultan a Account por
+la evidencia ligada a `subject + jti + method`. Catalog solicita siempre
+`method=AUTHENTICATOR_APP`: SMS y correo no satisfacen esta autorizacion. La
+consulta interna usa `ACCOUNT_INTERNAL_URL`, una firma HMAC con
+`INTERNAL_SERVICE_AUTH_SECRET` y un tiempo limite configurable mediante
+`INTERNAL_TIMEOUT_MS`. Evidencia ausente responde `403`; imposibilidad de
+comprobarla responde `503`. En ambos casos la operacion falla antes de persistir.
 
 Con `disabled` no se deja pasar sin mas: se atribuye el sujeto literal `anonymous` con todos los roles. Sin proveedor **no se sabe** quien realiza la peticion, y el dato que se guarde debe decirlo. Un registro firmado por `anonymous` es honesto; uno firmado por un identificador sin verificar, no.
 
@@ -178,11 +187,20 @@ Documentación interactiva de la API en `http://localhost:3003/api/docs`.
 | `POST` | `/api/products/:sku/publication` | Publica el producto                                            |
 | `POST` | `/api/products/:sku/archival`    | Archiva el producto                                            |
 | `POST` | `/api/products/:sku/price`       | Cambia el precio                                               |
+| `POST` | `/api/v1/catalog/products`       | Crea un producto canónico de ADR-013                           |
 | `GET`  | `/api/health/live`               | El proceso responde. No consulta dependencias                  |
 | `GET`  | `/api/health/ready`              | Evalúa las dependencias reales. Responde `503` si alguna falla |
 | `GET`  | `/api/version`                   | Servicio, versión y entorno                                    |
 
 Las consultas públicas (`GET`) devuelven `404` para un producto en borrador o archivado: no es un error de implementación, es la regla de visibilidad del dominio.
+
+`POST /api/v1/catalog/products` es la ruta de transición hacia el producto
+canónico. Recibe `printRun`; Catalog calcula y devuelve `printRunMode`,
+`productId` y `lifecycleStatus`. El `sku` sigue siendo un alias temporal:
+puede enviarse por compatibilidad o se genera automáticamente. La ruta exige
+un rol administrativo y evidencia TOTP de una aplicacion autenticadora ligada
+al `jti` del access token; no acepta esa evidencia desde el cuerpo o cabeceras
+de la petición.
 
 ## Scripts
 
@@ -221,7 +239,7 @@ La imagen es multi-etapa, se ejecuta con el usuario sin privilegios `node`, incl
 ## Limitaciones conocidas del alcance actual
 
 - **La persistencia por defecto es en memoria y se pierde al reiniciar.** Con `PERSISTENCE_DRIVER=mongo` opera el adaptador real sobre MongoDB con el driver oficial, probado contra un motor en contenedor. El repositorio en memoria no es un resto del andamiaje: es lo que permite probar el dominio y los casos de uso **sin Docker**. El driver está fijado en la línea `6.x`: la `7.6.0` no conecta con MongoDB 8.0.
-- **No hay control de acceso.** Crear, publicar, archivar y cambiar precios deberían requerir rol de administrador. La autorización depende de que Account emita credenciales verificables, lo que a su vez depende del proveedor de identidad pendiente de aprobación. Añadir aquí una comprobación de rol sin una identidad verificable sería seguridad aparente.
+- **La consulta de evidencia MFA requiere un despliegue coordinado con Account.** Account ya conserva y valida `method=AUTHENTICATOR_APP`, y Catalog firma `{subject, jti, method}`. En cada entorno ambos servicios deben compartir `INTERNAL_SERVICE_AUTH_SECRET`, y Catalog debe resolver `ACCOUNT_INTERNAL_URL`; si la configuración falta o Account no puede comprobar la evidencia, Catalog falla cerrado con `503` y nunca degrada la autorización a solo rol. `AUTH_MODE=disabled` sirve exclusivamente para desarrollo local y está prohibido en producción.
 - **No se publica el catálogo hacia otros contextos.** Los eventos de dominio existen y están documentados, pero su transporte depende de ADR-006.
 - No hay inventario ni stock: la disponibilidad de unidades no pertenece a este contexto.
 

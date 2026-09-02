@@ -33,6 +33,33 @@ describe('API de catalogo', () => {
   const create = (body: Record<string, unknown>) =>
     request(app.getHttpServer()).post('/api/products').send(body)
 
+  const createCanonical = () =>
+    request(app.getHttpServer())
+      .post('/api/v1/catalog/products')
+      .send({
+        name: 'Espada canónica local',
+        imageUrl: 'https://assets.example.test/catalog/espada-canonica.webp',
+        description: 'Producto creado con la seguridad desactivada solo en desarrollo local.',
+        type: 'ARMA',
+        attributes: {
+          schemaVersion: '1',
+          values: {
+            kind: 'ARMA',
+            compatibilityScope: 'ALL_HEROES',
+            effects: [
+              {
+                kind: 'DAMAGE',
+                target: 'OPPONENT',
+                magnitude: { mode: 'FIXED', amount: 5 },
+              },
+            ],
+          },
+        },
+        printRun: -1,
+        creditsPrice: 0,
+        premium: false,
+      })
+
   const base = {
     name: 'Espada de hierro',
     category: 'armas',
@@ -52,6 +79,18 @@ describe('API de catalogo', () => {
       isPremium: false,
       realMoneyPrice: null,
       status: 'DRAFT',
+    })
+  })
+
+  it('POST /api/v1/catalog/products sigue siendo ejercitable en desarrollo sin identidad', async () => {
+    const response = await createCanonical()
+
+    expect(response.status).toBe(201)
+    expect(response.body).toMatchObject({
+      printRun: -1,
+      printRunMode: 'INFINITE',
+      lifecycleStatus: 'ACTIVE',
+      attributes: { values: { effects: [{ stackable: false }] } },
     })
   })
 

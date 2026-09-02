@@ -154,6 +154,17 @@ describe('CreateCanonicalProduct', () => {
     expect(harness.products.checkedType).toBe(ProductType.Hero)
   })
 
+  it('genera SKU legible y único cuando el alias temporal se omite', async () => {
+    const harness = buildHarness()
+    const command = heroCommand() as Record<string, unknown>
+    delete command.sku
+
+    await expect(harness.useCase.execute(command)).resolves.toMatchObject({
+      productId: PRODUCT_ID,
+      sku: 'guerrero-de-acero-aaaaaaaa',
+    })
+  })
+
   it('rechaza nombre y tipo duplicados sin invocar escritura ni generar identidad', async () => {
     const harness = buildHarness()
     harness.products.duplicate = true
