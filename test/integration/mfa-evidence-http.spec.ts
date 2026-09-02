@@ -15,6 +15,8 @@ import {
 import {
   MFA_EVIDENCE_VERIFIER,
   MfaEvidenceOutcome,
+  SecondFactorMethod,
+  type SecondFactorMethod as SecondFactorMethodValue,
   type MfaEvidenceVerifierPort,
 } from '../../src/application/ports/MfaEvidenceVerifierPort'
 
@@ -61,12 +63,16 @@ const stubVerifier: TokenVerifierPort = {
 }
 
 /** Registra cada consulta para poder afirmar que NO se hace en rutas publicas. */
-const consultas: { subject: string; jti: string }[] = []
+const consultas: { subject: string; jti: string; method: SecondFactorMethodValue }[] = []
 let resultado: MfaEvidenceOutcome = MfaEvidenceOutcome.Valid
 
 const stubEvidence: MfaEvidenceVerifierPort = {
-  verify: (subject: string, jti: string): Promise<MfaEvidenceOutcome> => {
-    consultas.push({ subject, jti })
+  verify: (
+    subject: string,
+    jti: string,
+    method: SecondFactorMethodValue,
+  ): Promise<MfaEvidenceOutcome> => {
+    consultas.push({ subject, jti, method })
 
     // Solo el testimonio con evidencia sembrada la tiene.
     if (jti !== ADMIN.jti) {
@@ -133,7 +139,13 @@ describe('Evidencia de segundo factor en las mutaciones administrativas', () => 
       .send(producto('sku-con-evidencia'))
 
     expect(response.status).toBe(201)
-    expect(consultas).toEqual([{ subject: 'sujeto-admin', jti: 'jti-con-evidencia' }])
+    expect(consultas).toEqual([
+      {
+        subject: 'sujeto-admin',
+        jti: 'jti-con-evidencia',
+        method: SecondFactorMethod.AuthenticatorApp,
+      },
+    ])
   })
 
   /**
@@ -163,7 +175,13 @@ describe('Evidencia de segundo factor en las mutaciones administrativas', () => 
       .send(producto('sku-jti-distinto'))
 
     expect(response.status).toBe(403)
-    expect(consultas).toEqual([{ subject: 'sujeto-admin', jti: 'jti-sin-evidencia' }])
+    expect(consultas).toEqual([
+      {
+        subject: 'sujeto-admin',
+        jti: 'jti-sin-evidencia',
+        method: SecondFactorMethod.AuthenticatorApp,
+      },
+    ])
   })
 
   it('DENIEGA si el testimonio no trae identificador', async () => {

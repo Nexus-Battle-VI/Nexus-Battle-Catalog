@@ -70,6 +70,23 @@ describe('Traduccion del token a identidad verificada', () => {
     ).toBe('ana@nexus.test')
   })
 
+  it('conserva el jti para correlación sin tratarlo como evidencia MFA', () => {
+    const identity = toVerifiedIdentity({ sub: 's', jti: 'access-token-1' })
+
+    expect(identity.jti).toBe('access-token-1')
+    expect(identity.expiresAt).toBeNull()
+  })
+
+  it.each([undefined, null, '', 42])('ignora un jti no utilizable: %p', (jti) => {
+    expect(toVerifiedIdentity({ sub: 's', jti }).jti).toBeNull()
+  })
+
+  it('convierte exp de segundos Unix a la fecha de expiración del testimonio', () => {
+    expect(toVerifiedIdentity({ sub: 's', exp: 1_700_000_000 }).expiresAt).toEqual(
+      new Date(1_700_000_000_000),
+    )
+  })
+
   /**
    * Antes se rellenaba con cadena vacia. Un token con firma valida pero sin
    * `sub` se convertia asi en una identidad utilizable, y todos los tokens mal
@@ -285,6 +302,8 @@ describe('AnonymousIdentityGuard', () => {
     expect(ANONYMOUS_IDENTITY.roles.has(Role.Moderator)).toBe(true)
     expect(ANONYMOUS_IDENTITY.roles.has(Role.Player)).toBe(true)
     expect(ANONYMOUS_IDENTITY.roles.has(Role.SuperAdministrator)).toBe(true)
+    expect(ANONYMOUS_IDENTITY.jti).toBeNull()
+    expect(ANONYMOUS_IDENTITY.expiresAt).toBeNull()
   })
 })
 

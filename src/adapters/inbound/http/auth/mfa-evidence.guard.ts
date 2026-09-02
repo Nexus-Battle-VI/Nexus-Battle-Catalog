@@ -9,6 +9,7 @@ import type { Reflector } from '@nestjs/core'
 
 import {
   MfaEvidenceOutcome,
+  SecondFactorMethod,
   type MfaEvidenceVerifierPort,
 } from '../../../../application/ports/MfaEvidenceVerifierPort'
 import { REQUIRES_MFA_EVIDENCE, type RequestWithIdentity } from './decorators'
@@ -61,17 +62,25 @@ export class MfaEvidenceGuard implements CanActivate {
       // No deberia ocurrir: un guard anterior siempre deja identidad. Si el
       // orden cambiara, este camino niega en lugar de reventar con un 500 que
       // ocultaria una ruta administrativa sin comprobar.
-      throw new ForbiddenException('La operacion exige un segundo factor verificado.')
+      throw new ForbiddenException(
+        'La operacion exige TOTP verificado mediante una aplicacion autenticadora.',
+      )
     }
 
     if (identity.jti === null) {
       // Sin `jti` no hay nada que preguntar: ningun testimonio puede acreditar
       // un segundo factor si no se puede identificar. Es el caso de la
       // identidad anonima, que solo existe sin proveedor configurado.
-      throw new ForbiddenException('La operacion exige un segundo factor verificado.')
+      throw new ForbiddenException(
+        'La operacion exige TOTP verificado mediante una aplicacion autenticadora.',
+      )
     }
 
-    const outcome = await this.options.verifier.verify(identity.subject, identity.jti)
+    const outcome = await this.options.verifier.verify(
+      identity.subject,
+      identity.jti,
+      SecondFactorMethod.AuthenticatorApp,
+    )
 
     if (outcome === MfaEvidenceOutcome.Valid) {
       return true
@@ -83,6 +92,8 @@ export class MfaEvidenceGuard implements CanActivate {
       )
     }
 
-    throw new ForbiddenException('La operacion exige un segundo factor verificado.')
+    throw new ForbiddenException(
+      'La operacion exige TOTP verificado mediante una aplicacion autenticadora.',
+    )
   }
 }

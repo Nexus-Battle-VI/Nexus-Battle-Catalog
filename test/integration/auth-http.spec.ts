@@ -50,11 +50,39 @@ const IDENTITIES: Readonly<Record<string, VerifiedIdentity>> = {
     jti: 'jti-admin',
     expiresAt: new Date(Date.now() + 900_000),
   },
+  'token-administrador-sin-evidencia': {
+    subject: 'sujeto-admin-sin-evidencia',
+    email: null,
+    roles: new Set([Role.Player, Role.Administrator]),
+    jti: 'jti-admin-sin-evidencia',
+    expiresAt: new Date(Date.now() + 900_000),
+  },
+  'token-administrador-evidencia-no-disponible': {
+    subject: 'sujeto-admin-evidencia-no-disponible',
+    email: null,
+    roles: new Set([Role.Player, Role.Administrator]),
+    jti: 'jti-admin-evidencia-no-disponible',
+    expiresAt: new Date(Date.now() + 900_000),
+  },
   'token-super-administrador': {
     subject: 'sujeto-super-admin',
     email: null,
     roles: new Set([Role.Player, Role.SuperAdministrator]),
     jti: 'jti-super-admin',
+    expiresAt: new Date(Date.now() + 900_000),
+  },
+  'token-administrador-mfa': {
+    subject: 'sujeto-admin-mfa',
+    email: null,
+    roles: new Set([Role.Player, Role.Administrator]),
+    jti: 'jti-admin-mfa',
+    expiresAt: new Date(Date.now() + 900_000),
+  },
+  'token-super-administrador-mfa': {
+    subject: 'sujeto-super-admin-mfa',
+    email: null,
+    roles: new Set([Role.Player, Role.SuperAdministrator]),
+    jti: 'jti-super-admin-mfa',
     expiresAt: new Date(Date.now() + 900_000),
   },
 }
@@ -84,16 +112,26 @@ describe('API de catalogo con autenticacion activa', () => {
     process.env.COGNITO_USER_POOL_ID = 'us-east-1_pruebas'
     process.env.COGNITO_CLIENT_ID = 'cliente-de-pruebas'
 
-    // Este bloque comprueba RBAC, no la evidencia de segundo factor: el
-    // verificador responde siempre que la hay, para que un fallo aqui signifique
-    // un fallo de roles y no de otra cosa. El comportamiento de la evidencia
-    // tiene su propio fichero, `mfa-evidence-http.spec.ts`.
+    // Este bloque comprueba principalmente RBAC. La unica ausencia simulada es
+    // la del testimonio creado expresamente para demostrar que el endpoint
+    // canonico tambien esta conectado al guard oficial de evidencia MFA. El
+    // comportamiento exhaustivo vive en `mfa-evidence-http.spec.ts`.
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(TOKEN_VERIFIER)
       .useValue(stubVerifier)
       .overrideProvider(MFA_EVIDENCE_VERIFIER)
       .useValue({
-        verify: (): Promise<MfaEvidenceOutcome> => Promise.resolve(MfaEvidenceOutcome.Valid),
+        verify: (_subject: string, jti: string): Promise<MfaEvidenceOutcome> => {
+          if (jti === 'jti-admin-sin-evidencia') {
+            return Promise.resolve(MfaEvidenceOutcome.Absent)
+          }
+
+          if (jti === 'jti-admin-evidencia-no-disponible') {
+            return Promise.resolve(MfaEvidenceOutcome.Unavailable)
+          }
+
+          return Promise.resolve(MfaEvidenceOutcome.Valid)
+        },
       })
       .compile()
 
@@ -137,6 +175,41 @@ describe('API de catalogo con autenticacion activa', () => {
       : call.set('Authorization', bearer(token)).send(nuevoProducto())
   }
 
+  let contadorCanonico = 0
+  const nuevoProductoCanonico = () => {
+    contadorCanonico += 1
+
+    return {
+      name: `Espada de fuego ${String(contadorCanonico)}`,
+      imageUrl: 'https://assets.example.test/catalog/espada-de-fuego.webp',
+      description: 'Espada de dos manos con daño de fuego.',
+      type: 'ARMA',
+      attributes: {
+        schemaVersion: '1',
+        values: {
+          kind: 'ARMA',
+          compatibilityScope: 'ALL_HEROES',
+          effects: [
+            {
+              kind: 'DAMAGE',
+              target: 'OPPONENT',
+              magnitude: { mode: 'DICE', count: 2, sides: 6 },
+            },
+          ],
+        },
+      },
+      printRun: 150,
+      creditsPrice: 40,
+      premium: false,
+    }
+  }
+
+  const crearCanonico = (token: string, body = nuevoProductoCanonico()) =>
+    request(app.getHttpServer())
+      .post('/api/v1/catalog/products')
+      .set('Authorization', bearer(token))
+      .send(body)
+
   describe('El catalogo publicado es publico', () => {
     it('se puede listar sin testimonio: es informacion de escaparate', async () => {
       const response = await request(app.getHttpServer()).get('/api/products')
@@ -173,6 +246,74 @@ describe('API de catalogo con autenticacion activa', () => {
 
     it('un SUPER_ADMINISTRATOR puro satisface la gestion ADMINISTRATOR', async () => {
       expect((await crear('token-super-administrador')).status).toBe(201)
+    })
+  })
+
+  describe('Creación canónica administrativa', () => {
+    it('deniega al administrador sin evidencia de segundo factor', async () => {
+      expect((await crearCanonico('token-administrador-sin-evidencia')).status).toBe(403)
+    })
+
+    it('falla cerrado si Account no permite comprobar la evidencia', async () => {
+      expect((await crearCanonico('token-administrador-evidencia-no-disponible')).status).toBe(503)
+    })
+
+    it('permite al SUPER_ADMINISTRATOR con segundo factor confirmado', async () => {
+      expect((await crearCanonico('token-super-administrador-mfa')).status).toBe(201)
+    })
+
+    it('crea un producto canónico para administrador con segundo factor y genera SKU', async () => {
+      const response = await crearCanonico('token-administrador-mfa')
+
+      expect(response.status).toBe(201)
+      expect(response.body).toMatchObject({
+        type: 'ARMA',
+        printRun: 150,
+        printRunMode: 'LIMITED',
+        lifecycleStatus: 'ACTIVE',
+        premium: false,
+        realMoneyPrice: null,
+        attributes: {
+          schemaVersion: '1',
+          values: {
+            kind: 'ARMA',
+            effects: [{ kind: 'DAMAGE', stackable: false }],
+          },
+        },
+      })
+      expect(response.body.sku).toMatch(/^espada-de-fuego-[0-9]+-[0-9a-f]{8}$/)
+      expect(response.body.productId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      )
+    })
+
+    it('rechaza campos derivados declarados por el cliente', async () => {
+      const body = { ...nuevoProductoCanonico(), productId: 'no-debe-llegar' }
+
+      expect((await crearCanonico('token-administrador-mfa', body)).status).toBe(400)
+    })
+
+    it('rechaza campos derivados dentro de una variante de atributos', async () => {
+      const body = nuevoProductoCanonico()
+      const attributes = body.attributes as {
+        values: { effects: Record<string, unknown>[] }
+      }
+      attributes.values.effects[0]!.stackable = false
+
+      expect((await crearCanonico('token-administrador-mfa', body)).status).toBe(400)
+    })
+
+    it('traduce una regla de dominio a 422', async () => {
+      const body = { ...nuevoProductoCanonico(), printRun: 0 }
+
+      expect((await crearCanonico('token-administrador-mfa', body)).status).toBe(422)
+    })
+
+    it('traduce nombre y tipo activo duplicados a 409', async () => {
+      const body = nuevoProductoCanonico()
+
+      expect((await crearCanonico('token-administrador-mfa', body)).status).toBe(201)
+      expect((await crearCanonico('token-administrador-mfa', body)).status).toBe(409)
     })
   })
 

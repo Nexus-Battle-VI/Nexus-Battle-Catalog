@@ -27,6 +27,11 @@ export interface CanonicalProductWritePort {
   create(product: CanonicalProduct): Promise<void>
 }
 
+/** Almacén canónico completo durante la transición aditiva de ADR-013. */
+export interface CanonicalProductRepositoryPort
+  extends CanonicalProductWritePort, ProductReferenceQueryPort {}
+
 export const HERO_SUBTYPE_REGISTRY = Symbol('HeroSubtypeRegistryPort')
 export const PRODUCT_REFERENCE_QUERY = Symbol('ProductReferenceQueryPort')
 export const CANONICAL_PRODUCT_WRITE = Symbol('CanonicalProductWritePort')
+export const CANONICAL_PRODUCT_REPOSITORY = Symbol('CanonicalProductRepositoryPort')

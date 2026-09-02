@@ -51,7 +51,7 @@ export interface CreateCanonicalProductDependencies {
 }
 
 interface ParsedCreateCommand {
-  readonly sku: Sku
+  readonly sku: Sku | undefined
   readonly name: ProductName
   readonly imageUrl: ProductImageUrl
   readonly description: ProductDescription
@@ -75,9 +75,10 @@ export class CreateCanonicalProduct {
 
     await this.validateReferences(command.attributes)
 
+    const productId = new ProductIdFactory(this.deps.idGenerator).create()
     const product = CanonicalProduct.create({
-      productId: new ProductIdFactory(this.deps.idGenerator).create(),
-      sku: command.sku,
+      productId,
+      sku: command.sku ?? generateCanonicalSku(command.name, productId),
       name: command.name,
       imageUrl: command.imageUrl,
       description: command.description,
@@ -162,7 +163,7 @@ const parseCreateCommand = (raw: unknown): ParsedCreateCommand => {
   const realMoneyPrice = parseRealMoneyPrice(optionalValue(record, 'realMoneyPrice'))
 
   return {
-    sku: Sku.create(parseString(requiredValue(record, 'sku', path), `${path}.sku`)),
+    sku: parseOptionalSku(optionalValue(record, 'sku')),
     name: ProductName.create(parseString(requiredValue(record, 'name', path), `${path}.name`)),
     imageUrl: ProductImageUrl.create(
       parseString(requiredValue(record, 'imageUrl', path), `${path}.imageUrl`),
@@ -183,6 +184,25 @@ const parseCreateCommand = (raw: unknown): ParsedCreateCommand => {
       realMoneyPrice,
     }),
   }
+}
+
+const parseOptionalSku = (raw: unknown): Sku | undefined =>
+  raw === undefined ? undefined : Sku.create(parseString(raw, 'command.sku'))
+
+/**
+ * SKU es un alias transitorio, no la identidad del producto. Cuando el
+ * administrador no lo informa, se obtiene una forma legible del nombre y un
+ * sufijo derivado del productId que evita colisiones entre nombres equivalentes.
+ */
+export const generateCanonicalSku = (name: ProductName, productId: ProductId): Sku => {
+  const slug = name.value
+    .normalize('NFKD')
+    .replace(/\p{Mark}/gu, '')
+    .toLocaleLowerCase('es')
+    .replace(/[^a-z0-9]+/gu, '-')
+    .replace(/^-+|-+$/gu, '')
+
+  return Sku.create(`${slug.length === 0 ? 'producto' : slug}-${productId.value.slice(0, 8)}`)
 }
 
 const parseRealMoneyPrice = (raw: unknown): Money | null => {
