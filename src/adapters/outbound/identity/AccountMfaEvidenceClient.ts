@@ -1,5 +1,6 @@
 import {
   MfaEvidenceOutcome,
+  type SecondFactorMethod,
   type MfaEvidenceVerifierPort,
 } from '../../../application/ports/MfaEvidenceVerifierPort'
 import {
@@ -54,8 +55,12 @@ export class AccountMfaEvidenceClient implements MfaEvidenceVerifierPort {
     this.fetchImpl = options.fetchImpl ?? fetch
   }
 
-  async verify(subject: string, jti: string): Promise<MfaEvidenceOutcome> {
-    const body = { subject, jti }
+  async verify(
+    subject: string,
+    jti: string,
+    method: SecondFactorMethod,
+  ): Promise<MfaEvidenceOutcome> {
+    const body = { subject, jti, method }
     const timestamp = String(Date.now())
     const signature = signInternalRequest(this.options.secret, {
       service: this.options.serviceName,

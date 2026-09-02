@@ -2,7 +2,10 @@ import {
   AccountMfaEvidenceClient,
   EVIDENCE_PATH,
 } from '../../src/adapters/outbound/identity/AccountMfaEvidenceClient'
-import { MfaEvidenceOutcome } from '../../src/application/ports/MfaEvidenceVerifierPort'
+import {
+  MfaEvidenceOutcome,
+  SecondFactorMethod,
+} from '../../src/application/ports/MfaEvidenceVerifierPort'
 import {
   INTERNAL_SERVICE_HEADER,
   INTERNAL_SIGNATURE_HEADER,
@@ -49,13 +52,17 @@ describe('AccountMfaEvidenceClient', () => {
   it('traduce valid=true a evidencia valida', async () => {
     const cliente = clienteCon(() => Promise.resolve(respuesta({ valid: true })))
 
-    await expect(cliente.verify('sujeto', 'jti')).resolves.toBe(MfaEvidenceOutcome.Valid)
+    await expect(
+      cliente.verify('sujeto', 'jti', SecondFactorMethod.AuthenticatorApp),
+    ).resolves.toBe(MfaEvidenceOutcome.Valid)
   })
 
   it('traduce valid=false a evidencia ausente', async () => {
     const cliente = clienteCon(() => Promise.resolve(respuesta({ valid: false })))
 
-    await expect(cliente.verify('sujeto', 'jti')).resolves.toBe(MfaEvidenceOutcome.Absent)
+    await expect(
+      cliente.verify('sujeto', 'jti', SecondFactorMethod.AuthenticatorApp),
+    ).resolves.toBe(MfaEvidenceOutcome.Absent)
   })
 
   /**
@@ -71,7 +78,7 @@ describe('AccountMfaEvidenceClient', () => {
       return Promise.resolve(respuesta({ valid: true }))
     })
 
-    await cliente.verify('sujeto-1', 'jti-1')
+    await cliente.verify('sujeto-1', 'jti-1', SecondFactorMethod.AuthenticatorApp)
 
     const { url, init } = enviado!
     const headers = init.headers as Record<string, string>
@@ -84,7 +91,11 @@ describe('AccountMfaEvidenceClient', () => {
       method: 'POST',
       path: EVIDENCE_PATH,
       timestamp: headers[INTERNAL_TIMESTAMP_HEADER]!,
-      body: { subject: 'sujeto-1', jti: 'jti-1' },
+      body: {
+        subject: 'sujeto-1',
+        jti: 'jti-1',
+        method: SecondFactorMethod.AuthenticatorApp,
+      },
     })
 
     expect(headers[INTERNAL_SIGNATURE_HEADER]).toBe(esperada)
@@ -109,7 +120,9 @@ describe('AccountMfaEvidenceClient', () => {
   ])('responde "no verificable" ante %s', async (_caso, impl: typeof fetch) => {
     const cliente = clienteCon(impl)
 
-    await expect(cliente.verify('sujeto', 'jti')).resolves.toBe(MfaEvidenceOutcome.Unavailable)
+    await expect(
+      cliente.verify('sujeto', 'jti', SecondFactorMethod.AuthenticatorApp),
+    ).resolves.toBe(MfaEvidenceOutcome.Unavailable)
   })
 
   /**
@@ -119,7 +132,9 @@ describe('AccountMfaEvidenceClient', () => {
   it('NO interpreta un valid textual como verdadero', async () => {
     const cliente = clienteCon(() => Promise.resolve(respuesta({ valid: 'true' })))
 
-    await expect(cliente.verify('sujeto', 'jti')).resolves.not.toBe(MfaEvidenceOutcome.Valid)
+    await expect(
+      cliente.verify('sujeto', 'jti', SecondFactorMethod.AuthenticatorApp),
+    ).resolves.not.toBe(MfaEvidenceOutcome.Valid)
   })
 
   it('aborta cuando se agota el tiempo de espera', async () => {
@@ -132,13 +147,15 @@ describe('AccountMfaEvidenceClient', () => {
         }),
     )
 
-    await expect(cliente.verify('sujeto', 'jti')).resolves.toBe(MfaEvidenceOutcome.Unavailable)
+    await expect(
+      cliente.verify('sujeto', 'jti', SecondFactorMethod.AuthenticatorApp),
+    ).resolves.toBe(MfaEvidenceOutcome.Unavailable)
   })
 
   it('NUNCA registra el secreto ni la firma completa', async () => {
     const cliente = clienteCon(() => Promise.resolve(respuesta({}, 503)))
 
-    await cliente.verify('sujeto', 'jti')
+    await cliente.verify('sujeto', 'jti', SecondFactorMethod.AuthenticatorApp)
 
     const volcado = JSON.stringify(registros)
 

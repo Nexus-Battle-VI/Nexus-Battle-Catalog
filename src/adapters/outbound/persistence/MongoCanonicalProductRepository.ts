@@ -5,10 +5,7 @@ import {
   CanonicalProductIdentityAlreadyExistsError,
   CanonicalProductSkuAlreadyExistsError,
 } from '../../../application/errors/ApplicationError'
-import type {
-  CanonicalProductWritePort,
-  ProductReferenceQueryPort,
-} from '../../../application/ports/CanonicalProductPorts'
+import type { CanonicalProductRepositoryPort } from '../../../application/ports/CanonicalProductPorts'
 import type { CanonicalProduct } from '../../../domain/entities/CanonicalProduct'
 import type { ProductId, ProductType } from '../../../domain/value-objects/canonical-product-values'
 import {
@@ -18,9 +15,7 @@ import {
 } from './canonical-mapping'
 
 /** Escritura canónica aditiva sobre la misma colección que conserva el legado. */
-export class MongoCanonicalProductRepository
-  implements CanonicalProductWritePort, ProductReferenceQueryPort
-{
+export class MongoCanonicalProductRepository implements CanonicalProductRepositoryPort {
   private readonly products: Collection<CanonicalProductDocument>
 
   constructor(db: Db) {

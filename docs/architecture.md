@@ -127,8 +127,8 @@ Registro JSON estructurado por línea, emitido exclusivamente desde `infrastruct
 
 ## Limitaciones conocidas del alcance actual
 
-- La persistencia es en memoria y se pierde al reiniciar. El adaptador MongoDB depende de ADR-005, que debe decidir el ODM antes de escribir esquema e índices.
-- **No hay control de acceso.** Las operaciones de escritura deberían exigir rol de administrador. Implementarlo requiere que Account emita credenciales verificables, lo que depende del proveedor de identidad pendiente de aprobación. Añadir una comprobación de rol sin identidad verificable sería seguridad aparente, no seguridad.
+- La persistencia por defecto es en memoria y se pierde al reiniciar; con `PERSISTENCE_DRIVER=mongo` el adaptador usa el driver oficial de MongoDB y se prueba contra un motor real. Las decisiones de despliegue, índices y operación siguen siendo responsabilidad de Infrastructure.
+- **La autenticación, el RBAC y la consulta fail-closed de evidencia MFA están implementados.** Account conserva y valida la evidencia ligada a `subject + jti + method`, y Catalog exige explícitamente `method=AUTHENTICATOR_APP`, porque SMS o correo no satisfacen la decisión para operaciones administrativas. El despliegue debe configurar la URL interna, la identidad de servicio y el secreto HMAC compartido; si Account no puede comprobar la evidencia, Catalog responde `503` y no ejecuta la mutación. El modo sin autenticación queda limitado al desarrollo local y no arranca en producción.
 - Los eventos de dominio no se publican hacia un bus. Su transporte depende de ADR-006.
 - No hay gestión de stock ni disponibilidad: no pertenece a este contexto.
 

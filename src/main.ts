@@ -2,11 +2,12 @@ import 'reflect-metadata'
 
 import { NestFactory } from '@nestjs/core'
 import { ValidationPipe } from '@nestjs/common'
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
+import { SwaggerModule } from '@nestjs/swagger'
 
 import { AppModule } from './infrastructure/bootstrap/app.module'
 import { loadConfig } from './infrastructure/config/env'
 import { createLogger } from './infrastructure/observability/logger'
+import { createCatalogOpenApiDocument } from './infrastructure/openapi/catalog-openapi'
 
 const bootstrap = async (): Promise<void> => {
   const config = loadConfig(process.env)
@@ -34,14 +35,7 @@ const bootstrap = async (): Promise<void> => {
   app.enableShutdownHooks()
 
   if (config.swaggerEnabled) {
-    const document = SwaggerModule.createDocument(
-      app,
-      new DocumentBuilder()
-        .setTitle('Nexus Battles VI — Catalog')
-        .setDescription('API del bounded context Catalog.')
-        .setVersion(config.version)
-        .build(),
-    )
+    const document = createCatalogOpenApiDocument(app, config)
 
     SwaggerModule.setup(`${config.globalPrefix}/docs`, app, document)
   }

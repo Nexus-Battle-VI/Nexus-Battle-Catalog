@@ -29,8 +29,23 @@ export const MfaEvidenceOutcome = {
 
 export type MfaEvidenceOutcome = (typeof MfaEvidenceOutcome)[keyof typeof MfaEvidenceOutcome]
 
+/**
+ * Metodos del contrato interno de Account.
+ *
+ * Catalog exige explicitamente `AUTHENTICATOR_APP` para sus operaciones
+ * administrativas. Conservar el metodo en la consulta evita que una evidencia
+ * obtenida mediante SMS o correo sea aceptada como si proviniera de TOTP.
+ */
+export const SecondFactorMethod = {
+  AuthenticatorApp: 'AUTHENTICATOR_APP',
+  Email: 'EMAIL',
+  Sms: 'SMS',
+} as const
+
+export type SecondFactorMethod = (typeof SecondFactorMethod)[keyof typeof SecondFactorMethod]
+
 export interface MfaEvidenceVerifierPort {
-  verify(subject: string, jti: string): Promise<MfaEvidenceOutcome>
+  verify(subject: string, jti: string, method: SecondFactorMethod): Promise<MfaEvidenceOutcome>
 }
 
 export const MFA_EVIDENCE_VERIFIER = Symbol('MfaEvidenceVerifierPort')
