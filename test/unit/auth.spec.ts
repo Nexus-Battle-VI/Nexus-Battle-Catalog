@@ -95,6 +95,8 @@ describe('JwtAuthGuard', () => {
     subject: 'sujeto-1',
     email: null,
     roles: new Set([Role.Player]),
+    jti: null,
+    expiresAt: null,
   }
 
   const verifier = (impl: TokenVerifierPort['verify']): TokenVerifierPort => ({ verify: impl })
@@ -182,6 +184,8 @@ describe('CurrentIdentity', () => {
       subject: 'sujeto-1',
       email: null,
       roles: new Set([Role.Player]),
+      jti: null,
+      expiresAt: null,
     }
 
     expect(resolve({ headers: {}, identity })).toBe(identity)
@@ -197,6 +201,8 @@ describe('RolesGuard', () => {
     subject: 's',
     email: null,
     roles: new Set(roles),
+    jti: null,
+    expiresAt: null,
   })
 
   it('deja pasar cuando la ruta no exige ningun rol', () => {

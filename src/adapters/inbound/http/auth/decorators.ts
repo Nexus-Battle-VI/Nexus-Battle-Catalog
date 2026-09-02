@@ -9,6 +9,7 @@ import type { Role, VerifiedIdentity } from '../../../../application/ports/Token
 
 export const IS_PUBLIC = 'auth:public'
 export const REQUIRED_ROLES = 'auth:roles'
+export const REQUIRES_MFA_EVIDENCE = 'auth:mfa-evidence'
 
 /**
  * Marca una ruta como accesible sin testimonio.
@@ -23,6 +24,20 @@ export const Public = (): MethodDecorator & ClassDecorator => SetMetadata(IS_PUB
 /** Exige que el testimonio incluya al menos uno de los roles indicados. */
 export const Roles = (...roles: readonly Role[]): MethodDecorator & ClassDecorator =>
   SetMetadata(REQUIRED_ROLES, roles)
+
+/**
+ * Exige que el testimonio presentado tenga evidencia de segundo factor.
+ *
+ * NO sustituye a `@Roles(...)`: se aplica ADEMAS. El rol dice quien es; la
+ * evidencia dice que ESTE testimonio concreto nacio de un segundo factor. Sin
+ * ella, un token administrativo obtenido sin segundo factor abre las mismas
+ * puertas que uno obtenido con el.
+ *
+ * Solo tiene sentido en mutaciones administrativas. Ponerla en una lectura
+ * publica la volveria dependiente de Account sin ganar nada.
+ */
+export const RequiresMfaEvidence = (): MethodDecorator & ClassDecorator =>
+  SetMetadata(REQUIRES_MFA_EVIDENCE, true)
 
 export interface RequestWithIdentity {
   identity?: VerifiedIdentity

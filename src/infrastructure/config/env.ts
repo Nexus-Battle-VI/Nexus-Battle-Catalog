@@ -42,6 +42,17 @@ export interface AppConfig {
   readonly databaseUrl: string | null
   readonly authMode: AuthMode
   readonly cognito: CognitoConfig | null
+  /**
+   * Contrato interno con Account para comprobar la evidencia de segundo factor.
+   *
+   * `null` cuando falta configuracion. En ese caso las mutaciones
+   * administrativas NO quedan abiertas: el verificador responde que no puede
+   * comprobar, y el guard deniega con 503.
+   */
+  readonly accountInternalUrl: string | null
+  readonly internalServiceAuthSecret: string | null
+  readonly internalServiceName: string
+  readonly internalTimeoutMs: number
 }
 
 type RawEnv = Readonly<Record<string, string | undefined>>
@@ -188,5 +199,12 @@ export const loadConfig = (env: RawEnv): AppConfig => {
       authMode === AuthMode.Jwt
         ? { userPoolId: cognitoUserPoolId, clientId: cognitoClientId }
         : null,
+    accountInternalUrl: readString(env, 'ACCOUNT_INTERNAL_URL', '').replace(/\/+$/, '') || null,
+    internalServiceAuthSecret: readString(env, 'INTERNAL_SERVICE_AUTH_SECRET', '') || null,
+    internalServiceName: readString(env, 'INTERNAL_SERVICE_NAME', 'catalog'),
+    // Corto a proposito: quien espera es una mutacion administrativa, y un
+    // tiempo de espera generoso convertiria una caida de Account en una
+    // interfaz congelada en lugar de un rechazo claro.
+    internalTimeoutMs: readInteger(env, 'INTERNAL_TIMEOUT_MS', 3_000, 100, 30_000),
   }
 }
