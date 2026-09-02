@@ -58,6 +58,21 @@ export interface VerifiedIdentity {
 
   /** Roles reconocidos. Los grupos desconocidos se descartan. */
   readonly roles: ReadonlySet<Role>
+
+  /**
+   * `jti` del testimonio: identifica ESTE token, no a la persona.
+   *
+   * Lo consume la comprobacion de evidencia de segundo factor. Ligar esa
+   * evidencia a la cuenta y no al testimonio convertiria una prueba de sesion
+   * en un permiso permanente.
+   *
+   * `null` cuando no hay testimonio del que extraerlo: es el caso de la
+   * identidad anonima, que solo existe sin proveedor configurado.
+   */
+  readonly jti: string | null
+
+  /** `exp` del testimonio, ya convertido a fecha. */
+  readonly expiresAt: Date | null
 }
 
 export interface TokenVerifierPort {

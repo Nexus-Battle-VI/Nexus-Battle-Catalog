@@ -36,7 +36,7 @@ import {
   PUBLISH_PRODUCT,
 } from './tokens'
 import { Role } from '../../../application/ports/TokenVerifierPort'
-import { Public, Roles } from './auth/decorators'
+import { Public, RequiresMfaEvidence, Roles } from './auth/decorators'
 import { ChangePriceRequest, CreateProductRequest, ProductResponse } from './products.dto'
 
 /**
@@ -62,7 +62,13 @@ export class ProductsController {
   // Crear, publicar, archivar y cambiar el precio son operaciones de gestion
   // del catalogo. Antes no exigian nada: cualquiera podia poner a la venta un
   // producto o cambiarle el precio.
+  //
+  // `@RequiresMfaEvidence()` acompana a `@Roles(...)` en las cuatro. El rol dice
+  // quien es; la evidencia dice que ESTE testimonio nacio de un segundo factor.
+  // Sin ella, un token administrativo obtenido sin segundo factor abriria las
+  // mismas puertas que uno obtenido con el.
   @Roles(Role.Administrator)
+  @RequiresMfaEvidence()
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Crea un producto en borrador' })
@@ -104,6 +110,7 @@ export class ProductsController {
   }
 
   @Roles(Role.Administrator)
+  @RequiresMfaEvidence()
   @Post(':sku/publication')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Publica un producto' })
@@ -119,6 +126,7 @@ export class ProductsController {
   }
 
   @Roles(Role.Administrator)
+  @RequiresMfaEvidence()
   @Post(':sku/archival')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Archiva un producto' })
@@ -134,6 +142,7 @@ export class ProductsController {
   }
 
   @Roles(Role.Administrator)
+  @RequiresMfaEvidence()
   @Post(':sku/price')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cambia el precio de un producto' })
