@@ -1,4 +1,4 @@
-import { createHash, createHmac } from 'node:crypto'
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 
 export const INTERNAL_SERVICE_HEADER = 'x-internal-service'
 export const INTERNAL_TIMESTAMP_HEADER = 'x-internal-timestamp'
@@ -63,3 +63,39 @@ export const canonicalString = (request: CanonicalRequest): string =>
 
 export const signInternalRequest = (secret: string, request: CanonicalRequest): string =>
   createHmac('sha256', secret).update(canonicalString(request), 'utf8').digest('hex')
+
+/**
+ * Ventana admitida entre el sello de la peticion y el reloj de quien verifica.
+ *
+ * Acota la reutilizacion de una firma interceptada. Treinta segundos absorben la
+ * deriva normal entre dos nodos sin dejar una ventana comoda.
+ */
+export const INTERNAL_CLOCK_SKEW_MS = 30_000
+
+/**
+ * Comparacion en tiempo constante.
+ *
+ * Un `===` sobre firmas tarda mas cuanto mas prefijo coincide, y esa diferencia
+ * es medible: permite reconstruir la firma byte a byte sin conocer el secreto.
+ */
+export const signatureMatches = (expected: string, received: string | undefined): boolean => {
+  if (received === undefined) {
+    return false
+  }
+
+  const a = Buffer.from(expected, 'utf8')
+  const b = Buffer.from(received, 'utf8')
+
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+/** Cierto si el sello de la peticion cae dentro de la ventana admitida. */
+export const timestampWithinWindow = (timestamp: string, now: Date, skewMs: number): boolean => {
+  const sent = Number(timestamp)
+
+  if (!Number.isFinite(sent)) {
+    return false
+  }
+
+  return Math.abs(now.getTime() - sent) <= skewMs
+}

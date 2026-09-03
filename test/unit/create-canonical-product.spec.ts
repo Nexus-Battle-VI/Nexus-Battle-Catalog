@@ -48,6 +48,21 @@ class ProductWriterFake implements CanonicalProductWritePort {
     this.created.push(product)
     return Promise.resolve()
   }
+
+  // Esta suite cubre la CREACION. Los tres metodos que HU-34 anadio al puerto
+  // tienen su propia suite; aqui se declaran sin comportamiento para que un uso
+  // accidental falle en voz alta en lugar de devolver un vacio plausible.
+  findById(): Promise<CanonicalProduct | null> {
+    return Promise.reject(new Error('findById no se usa en la creacion.'))
+  }
+
+  update(): Promise<void> {
+    return Promise.reject(new Error('update no se usa en la creacion.'))
+  }
+
+  decrementAvailability(): Promise<never> {
+    return Promise.reject(new Error('decrementAvailability no se usa en la creacion.'))
+  }
 }
 
 class HeroSubtypeRegistryFake implements HeroSubtypeRegistryPort {
