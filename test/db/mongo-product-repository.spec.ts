@@ -405,6 +405,7 @@ describe('MongoProductRepository', () => {
           '004-canonical-products',
           '005-atomicity-audit-outbox',
           '006-product-assets',
+          '007-print-run-availability',
         ])
         await expect(upgradeProducts.insertOne(invalidPremium)).rejects.toThrow()
       } finally {

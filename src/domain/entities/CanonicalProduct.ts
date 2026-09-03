@@ -11,6 +11,38 @@ import {
   type PrintRunMode,
 } from '../value-objects/canonical-product-values'
 import type { Money, ProductName, Sku } from '../value-objects/catalog-values'
+import { DomainError } from '../errors/DomainError'
+
+/**
+ * Comprueba que la disponibilidad y el tiraje digan lo mismo.
+ *
+ * Tiraje infinito exige `null`; cualquier otro modo exige un entero entre 0 y
+ * el tiraje. El limite superior es el que impide que un ajuste mal calculado
+ * deje mas unidades disponibles de las que el producto llegara a emitir.
+ */
+const assertAvailability = (printRun: PrintRun, availableUnits: number | null): void => {
+  if (printRun.isInfinite) {
+    if (availableUnits !== null) {
+      throw new DomainError(
+        `Un producto de tiraje infinito no lleva contador de unidades disponibles. Se recibio ${String(availableUnits)}.`,
+      )
+    }
+
+    return
+  }
+
+  if (availableUnits === null || !Number.isInteger(availableUnits)) {
+    throw new DomainError(
+      `Un producto de tiraje limitado necesita un contador entero de unidades disponibles. Se recibio ${String(availableUnits)}.`,
+    )
+  }
+
+  if (availableUnits < 0 || availableUnits > printRun.value) {
+    throw new DomainError(
+      `Las unidades disponibles deben estar entre 0 y el tiraje ${String(printRun.value)}. Se recibio ${String(availableUnits)}.`,
+    )
+  }
+}
 
 export interface CanonicalProductSnapshot {
   readonly productId: string
@@ -23,6 +55,16 @@ export interface CanonicalProductSnapshot {
   readonly attributes: ProductAttributes
   readonly printRun: number
   readonly printRunMode: PrintRunMode
+  /**
+   * Unidades que aun pueden emitirse. `null` en tiraje infinito, y ahi es un
+   * valor deliberado y no una ausencia: CA-03 exige que un producto infinito no
+   * lleve contador alguno.
+   *
+   * Las unidades ya entregadas NO se guardan porque son derivables:
+   * `printRun - availableUnits`. Un segundo contador solo anadiria una forma de
+   * que dos numeros que siempre deben cuadrar dejen de hacerlo.
+   */
+  readonly availableUnits: number | null
   readonly lifecycleStatus: LifecycleStatus
   readonly creditsPrice: number
   readonly premium: boolean
@@ -43,6 +85,7 @@ export class CanonicalProduct {
   readonly type: ProductType
   readonly attributes: ProductAttributes
   readonly printRun: PrintRun
+  readonly availableUnits: number | null
   readonly lifecycleStatus: LifecycleStatus
   readonly creditsPrice: CreditsPrice
   readonly premium: boolean
@@ -60,6 +103,7 @@ export class CanonicalProduct {
     type: ProductType
     attributes: ProductAttributes
     printRun: PrintRun
+    availableUnits: number | null
     pricing: ProductPricing
     createdAt: Date
     lifecycleStatus: LifecycleStatus
@@ -75,6 +119,13 @@ export class CanonicalProduct {
     this.type = params.type
     this.attributes = params.attributes
     this.printRun = params.printRun
+    // La invariante se comprueba aqui ADEMAS de en el validador de MongoDB.
+    // No es redundancia gratuita: el validador protege la base de escrituras
+    // por cualquier via, y esta comprobacion hace que un error de calculo falle
+    // en el dominio -donde se ve la causa- y no como un `Document failed
+    // validation` a cinco capas de distancia.
+    assertAvailability(params.printRun, params.availableUnits)
+    this.availableUnits = params.availableUnits
     this.creditsPrice = params.pricing.creditsPrice
     this.premium = params.pricing.premium
     this.realMoneyPrice = params.pricing.realMoneyPrice
@@ -98,6 +149,9 @@ export class CanonicalProduct {
   }): CanonicalProduct {
     return new CanonicalProduct({
       ...params,
+      // Un producto nace con todo su tiraje por emitir; infinito nace sin
+      // contador.
+      availableUnits: params.printRun.isInfinite ? null : params.printRun.value,
       lifecycleStatus: LifecycleStatus.Active,
       updatedAt: params.createdAt,
       version: 0,
@@ -113,6 +167,7 @@ export class CanonicalProduct {
     type: ProductType
     attributes: ProductAttributes
     printRun: PrintRun
+    availableUnits: number | null
     pricing: ProductPricing
     lifecycleStatus: LifecycleStatus
     createdAt: Date
@@ -134,6 +189,7 @@ export class CanonicalProduct {
       attributes: this.attributes,
       printRun: this.printRun.value,
       printRunMode: this.printRun.mode,
+      availableUnits: this.availableUnits,
       lifecycleStatus: this.lifecycleStatus,
       creditsPrice: this.creditsPrice.value,
       premium: this.premium,
