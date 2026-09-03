@@ -22,3 +22,4 @@ export const PRODUCT_ASSET_REPOSITORY_PORT = Symbol('ProductAssetRepositoryPort'
 export const ADJUST_PRODUCT_INVENTORY = Symbol('AdjustProductInventory')
 export const ACQUIRE_PRODUCT_UNIT = Symbol('AcquireProductUnit')
 export const GET_CANONICAL_PRODUCT = Symbol('GetCanonicalProduct')
+export const UPDATE_PRODUCT_RATING = Symbol('UpdateProductRating')

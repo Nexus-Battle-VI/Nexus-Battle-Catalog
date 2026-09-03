@@ -63,6 +63,10 @@ class ProductWriterFake implements CanonicalProductWritePort {
   decrementAvailability(): Promise<never> {
     return Promise.reject(new Error('decrementAvailability no se usa en la creacion.'))
   }
+
+  updateRating(): Promise<never> {
+    return Promise.reject(new Error('updateRating no se usa en la creacion.'))
+  }
 }
 
 class HeroSubtypeRegistryFake implements HeroSubtypeRegistryPort {

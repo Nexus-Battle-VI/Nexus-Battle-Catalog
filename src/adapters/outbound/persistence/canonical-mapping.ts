@@ -45,6 +45,8 @@ export interface CanonicalProductDocument {
     readonly amount: Long
     readonly currency: string
   } | null
+  readonly averageRating: number | null
+  readonly reviewCount: Long
   readonly createdAt: Date
   readonly updatedAt: Date
   readonly version?: Long
@@ -110,6 +112,12 @@ export const toCanonicalDocument = (product: CanonicalProduct): CanonicalProduct
             ),
             currency: snapshot.realMoneyPrice.currency,
           },
+    // `averageRating` es fraccionario -no cabe en `Long`-, asi que viaja como
+    // numero JS; Mongo lo guarda como `double`. `null` explicito, igual que
+    // `availableUnits`: sin calificaciones el promedio ES null, no un campo
+    // ausente.
+    averageRating: snapshot.averageRating,
+    reviewCount: toLong(snapshot.reviewCount, 'reviewCount', snapshot.productId),
     createdAt: new Date(snapshot.createdAt),
     updatedAt: new Date(snapshot.updatedAt),
     version: toLong(snapshot.version, 'version', snapshot.productId),
@@ -157,6 +165,11 @@ export const toCanonicalSnapshot = (
           ),
           currency: document.realMoneyPrice.currency,
         },
+  // Igual criterio que `availableUnits`: un documento al que le FALTE
+  // `reviewCount` no se traduce como cero en silencio, porque significaria que
+  // la migracion 012 no se aplico.
+  averageRating: document.averageRating,
+  reviewCount: toExactInteger(document.reviewCount, 'reviewCount', document._id),
   createdAt: document.createdAt.toISOString(),
   updatedAt: document.updatedAt.toISOString(),
   version:
@@ -295,6 +308,8 @@ export const toCanonicalProduct = (document: CanonicalProductDocument): Canonica
       lifecycleStatus: snapshot.lifecycleStatus,
       createdAt,
       updatedAt,
+      averageRating: snapshot.averageRating,
+      reviewCount: snapshot.reviewCount,
       version: snapshot.version,
     })
 

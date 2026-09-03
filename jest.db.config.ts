@@ -32,6 +32,7 @@ const config: Config = {
     'src/adapters/outbound/persistence/MongoStockReservationRepository.ts',
     'src/adapters/outbound/persistence/storefront-search-projection.ts',
     'src/adapters/outbound/persistence/migrations/011-storefront-search.ts',
+    'src/adapters/outbound/persistence/migrations/012-product-ratings.ts',
     'src/infrastructure/persistence/**/*.ts',
     '!src/infrastructure/persistence/migrate.ts',
   ],
