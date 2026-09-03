@@ -152,6 +152,12 @@ export class MongoCanonicalProductRepository implements CanonicalProductReposito
     return documento.printRunMode === 'INFINITE' ? { availableUnits: null, depleted: false } : null
   }
 
+  async findBySku(sku: string): Promise<CanonicalProduct | null> {
+    const document = await this.products.findOne({ sku, type: { $exists: true } })
+
+    return document === null ? null : toCanonicalProduct(document)
+  }
+
   private translateDuplicate(error: unknown, product: CanonicalProduct): never {
     if (!(error instanceof MongoServerError) || error.code !== 11000) {
       throw error

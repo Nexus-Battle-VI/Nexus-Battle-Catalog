@@ -342,6 +342,41 @@ describe('HU-34 sobre HTTP', () => {
       await request(app.getHttpServer()).post(path).set(cabeceras).send(cuerpo).expect(401)
     })
 
+    /**
+     * Commerce identifica por SKU y no conoce el identificador canonico. Sin
+     * esta resolucion el unico llamador real del contrato no podria usarlo.
+     */
+    it('acepta el SKU ademas del identificador canonico', async () => {
+      await crearProducto('arma-por-sku', 3)
+      const path = '/api/internal/v1/catalog/products/arma-por-sku/acquisitions'
+      const cuerpo = {
+        acquisitionId: '88888888-8888-4888-8888-888888888888',
+        playerId: 'jugador-1',
+      }
+
+      const respuesta = await request(app.getHttpServer())
+        .post(path)
+        .set(firmar(path, cuerpo))
+        .send(cuerpo)
+        .expect(200)
+
+      expect(respuesta.body).toMatchObject({ availableUnits: 2 })
+    })
+
+    it('un SKU inexistente es 404', async () => {
+      const path = '/api/internal/v1/catalog/products/no-existe-este-sku/acquisitions'
+      const cuerpo = {
+        acquisitionId: '99999999-9999-4999-8999-999999999999',
+        playerId: 'jugador-1',
+      }
+
+      await request(app.getHttpServer())
+        .post(path)
+        .set(firmar(path, cuerpo))
+        .send(cuerpo)
+        .expect(404)
+    })
+
     it('un servicio no declarado es rechazado aunque firme bien', async () => {
       const id = await crearProducto('arma-servicio-ajeno', 3)
       const path = `/api/internal/v1/catalog/products/${id}/acquisitions`

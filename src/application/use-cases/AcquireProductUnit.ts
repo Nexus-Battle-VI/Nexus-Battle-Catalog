@@ -61,7 +61,7 @@ export class AcquireProductUnit {
   constructor(private readonly deps: AcquireProductUnitDependencies) {}
 
   async execute(rawProductId: string, rawCommand: unknown): Promise<AcquisitionResult> {
-    const productId = ProductId.create(rawProductId)
+    const productId = await this.resolveProductId(rawProductId)
     const record = asStrictObject(rawCommand, 'command', ['acquisitionId', 'playerId'])
     const acquisitionId = ProductId.create(
       parseString(requiredValue(record, 'acquisitionId', 'command'), 'command.acquisitionId'),
@@ -173,7 +173,42 @@ export class AcquireProductUnit {
       }
     }
   }
+
+  /**
+   * Acepta el identificador canonico o, si no lo es, el SKU.
+   *
+   * NO es una comodidad. Commerce identifica los productos por SKU y hoy no
+   * tiene ninguna via para conocer el identificador canonico; sin esta
+   * resolucion, el unico llamador real del contrato interno no podria usarlo.
+   *
+   * El orden importa y no es intercambiable: un UUID en minusculas TAMBIEN
+   * encaja en el patron de SKU, asi que se comprueba primero la forma canonica.
+   * Al reves, un identificador valido se buscaria como alias y no se
+   * encontraria.
+   *
+   * `sku` esta marcado como deprecado en el contrato. Sustituir esto es trabajo
+   * de ADR-006, que define la integracion entre contextos; queda dicho aqui
+   * para que no se tome por permanente.
+   */
+  private async resolveProductId(raw: string): Promise<ProductId> {
+    const valor = raw.trim()
+
+    if (UUID.test(valor)) {
+      return ProductId.create(valor)
+    }
+
+    const porSku = await this.deps.products.findBySku(valor)
+
+    if (porSku === null) {
+      throw new CanonicalProductNotFoundError(valor)
+    }
+
+    return porSku.productId
+  }
 }
+
+/** Forma canónica de un identificador de producto. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 
 /** Señal interna: la adquisición se reservó en otra ejecución simultánea. */
 class AcquisitionAlreadyClaimed extends Error {

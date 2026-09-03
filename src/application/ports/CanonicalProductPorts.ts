@@ -42,6 +42,15 @@ export interface CanonicalProductWritePort {
   existsByNormalizedNameAndType(normalizedName: string, type: ProductType): Promise<boolean>
   create(product: CanonicalProduct, context?: TransactionContext): Promise<void>
   findById(productId: ProductId): Promise<CanonicalProduct | null>
+  /**
+   * Resuelve el alias de compatibilidad.
+   *
+   * `sku` esta marcado como DEPRECADO en el contrato canonico, y aun asi hace
+   * falta: Commerce identifica los productos por SKU y hoy no tiene ninguna via
+   * para conocer el identificador canonico. Aceptarlo aqui es lo que permite un
+   * flujo real; sustituirlo es trabajo de ADR-006, no de esta HU.
+   */
+  findBySku(sku: string): Promise<CanonicalProduct | null>
   update(
     product: CanonicalProduct,
     expectedVersion: number,

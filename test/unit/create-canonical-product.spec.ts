@@ -56,6 +56,10 @@ class ProductWriterFake implements CanonicalProductWritePort {
     return Promise.reject(new Error('findById no se usa en la creacion.'))
   }
 
+  findBySku(): Promise<CanonicalProduct | null> {
+    return Promise.reject(new Error('findBySku no se usa en la creacion.'))
+  }
+
   update(): Promise<void> {
     return Promise.reject(new Error('update no se usa en la creacion.'))
   }

@@ -80,6 +80,12 @@ export class InMemoryCanonicalProductRepository implements CanonicalProductRepos
     return Promise.resolve(this.byId.get(productId.value) ?? null)
   }
 
+  findBySku(sku: string): Promise<CanonicalProduct | null> {
+    const id = this.bySku.get(sku)
+
+    return Promise.resolve(id === undefined ? null : (this.byId.get(id) ?? null))
+  }
+
   /**
    * Decremento sin condicion real: este almacen es de un solo proceso.
    *
