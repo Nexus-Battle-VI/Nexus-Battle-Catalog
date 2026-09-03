@@ -132,11 +132,7 @@ export class MongoProductOutboxRepository implements ProductOutboxPort {
     )
   }
 
-  async fail(
-    eventId: string,
-    error: string,
-    maxAttempts = 5,
-  ): Promise<void> {
+  async fail(eventId: string, error: string, maxAttempts = 5): Promise<void> {
     const now = new Date()
     const document = await this.outbox.findOne({ eventId })
     if (!document) return

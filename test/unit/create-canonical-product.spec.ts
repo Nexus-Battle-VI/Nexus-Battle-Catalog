@@ -270,7 +270,9 @@ describe('CreateCanonicalProduct', () => {
       products,
       heroSubtypes: subtypes,
       productReferences: references,
-      idGenerator: { generate: jest.fn().mockReturnValueOnce(PRODUCT_ID).mockReturnValueOnce('event-123') },
+      idGenerator: {
+        generate: jest.fn().mockReturnValueOnce(PRODUCT_ID).mockReturnValueOnce('event-123'),
+      },
       clock: { now: () => NOW },
       unitOfWork: {
         executeTransaction: async (work) => {

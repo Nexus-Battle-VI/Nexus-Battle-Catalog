@@ -1,4 +1,7 @@
-import type { CanonicalProduct, CanonicalProductSnapshot } from '../../domain/entities/CanonicalProduct'
+import type {
+  CanonicalProduct,
+  CanonicalProductSnapshot,
+} from '../../domain/entities/CanonicalProduct'
 import type { ProductId, ProductType } from '../../domain/value-objects/canonical-product-values'
 
 export const HeroCombatBranch = {

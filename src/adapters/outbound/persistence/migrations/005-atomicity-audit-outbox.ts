@@ -15,10 +15,12 @@ const OUTBOX_STATUSES = ['PENDING', 'IN_FLIGHT', 'DISPATCHED', 'DEAD']
  */
 export const up = async (db: Db): Promise<void> => {
   // 1. Backfill seguro de `version: 0` en documentos canónicos existentes si los hubiera
-  await db.collection('products').updateMany(
-    { type: { $exists: true }, version: { $exists: false } },
-    { $set: { version: Long.fromNumber(0) } },
-  )
+  await db
+    .collection('products')
+    .updateMany(
+      { type: { $exists: true }, version: { $exists: false } },
+      { $set: { version: Long.fromNumber(0) } },
+    )
 
   const legacySchema = {
     $and: [

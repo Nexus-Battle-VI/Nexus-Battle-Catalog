@@ -149,7 +149,10 @@ describe('EN-027.7: Auditoría insert-only de Producto', () => {
 })
 
 describe('EN-027.8: Outbox persistente y reclamación por lease', () => {
-  const buildOutboxEntry = (id: string, status: OutboxStatus = OutboxStatus.Pending): OutboxEntry => ({
+  const buildOutboxEntry = (
+    id: string,
+    status: OutboxStatus = OutboxStatus.Pending,
+  ): OutboxEntry => ({
     eventId: id,
     aggregateId: 'prod-1',
     aggregateType: 'CanonicalProduct',

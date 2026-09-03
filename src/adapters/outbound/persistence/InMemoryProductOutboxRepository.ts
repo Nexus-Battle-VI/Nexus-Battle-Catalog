@@ -70,11 +70,7 @@ export class InMemoryProductOutboxRepository implements ProductOutboxPort {
     return Promise.resolve()
   }
 
-  fail(
-    eventId: string,
-    error: string,
-    maxAttempts = 5,
-  ): Promise<void> {
+  fail(eventId: string, error: string, maxAttempts = 5): Promise<void> {
     const entry = this.entries.find((e) => e.eventId === eventId)
     if (entry) {
       const mutable = entry as {
