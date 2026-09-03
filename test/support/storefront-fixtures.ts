@@ -21,6 +21,7 @@ export const catalogFixture = (
     currency?: string
     amount?: number
     name?: string
+    description?: string
   } = {},
 ): CanonicalProduct => {
   const suffix = String(sequence).padStart(12, '0')
@@ -32,7 +33,7 @@ export const catalogFixture = (
     imageUrl: ProductImageUrl.create(
       'https://catalog.example.test/api/v1/catalog/product-assets/00000000-0000-4000-8000-000000000001/content',
     ),
-    description: ProductDescription.create('Espada con efecto de fuego.'),
+    description: ProductDescription.create(options.description ?? 'Espada con efecto de fuego.'),
     type: ProductType.Weapon,
     attributes: parseProductAttributes(
       {

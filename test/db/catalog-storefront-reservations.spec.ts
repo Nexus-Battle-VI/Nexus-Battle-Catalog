@@ -13,6 +13,19 @@ import {
   migrateToLatest,
 } from '../../src/infrastructure/persistence/database'
 import { up } from '../../src/adapters/outbound/persistence/migrations/010-stock-reservations'
+import { up as migrateSearch } from '../../src/adapters/outbound/persistence/migrations/011-storefront-search'
+import {
+  toCanonicalDocument,
+  toCanonicalProduct,
+  type CanonicalProductDocument,
+} from '../../src/adapters/outbound/persistence/canonical-mapping'
+import {
+  SEARCH_BUCKETS,
+  STOREFRONT_SEARCH_INDEX,
+  STOREFRONT_ORDER_INDEX,
+  storefrontMongoQuery,
+} from '../../src/adapters/outbound/persistence/storefront-search-projection'
+import { Long } from 'mongodb'
 import { PrintRun } from '../../src/domain/value-objects/canonical-product-values'
 import { catalogFixture } from '../support/storefront-fixtures'
 import { closeMongoTestResources } from '../support/mongo-test-resources'
@@ -67,6 +80,98 @@ describe('Mongo storefront and durable batch reservations', () => {
     expect((await query.execute({ currency: 'USD', page: 2 })).items).toHaveLength(1)
     expect((await query.execute({ query: '999' })).total).toBe(18)
     expect((await query.execute({ query: '.*' })).total).toBe(0)
+  })
+
+  it('uses a real multikey index, preserves one-character literal search and transfers only a 16-item facet', async () => {
+    for (let n = 1; n <= 33; n++) await products.create(catalogFixture(n, { currency: 'USD' }))
+    await products.create(
+      catalogFixture(34, {
+        name: 'Ñandú especial',
+        description: '$literal .* emoji 😀',
+        currency: 'COP',
+      }),
+    )
+    const query = new ListCatalogStorefront(products)
+    const one = await query.execute({ query: 'ñ' })
+    expect(one.total).toBe(1)
+    expect(one.items[0]?.productId).toBe(catalogFixture(34).productId.value)
+    for (const term of ['$literal', '.*', '😀', 'ÑANDÚ'])
+      expect((await query.execute({ query: term })).total).toBe(1)
+    for (const term of ['fuego', 'damage', '42', '999 usd'])
+      expect((await query.execute({ query: term, currency: 'USD' })).total).toBe(33)
+    const page = await query.execute({
+      query: 'damage',
+      currency: 'USD',
+      minPrice: 999,
+      maxPrice: 999,
+      type: 'ARMA',
+      page: 2,
+    })
+    expect(page).toMatchObject({ page: 2, pageSize: 16, total: 33 })
+    expect(page.items).toHaveLength(16)
+    expect((await query.execute({ query: 'damage', currency: 'USD', page: 3 })).items).toHaveLength(
+      1,
+    )
+    const indexed = storefrontMongoQuery({ query: 'ñ', page: 1 })
+    const plan = await db
+      .collection('products')
+      .aggregate(indexed.pipeline, { hint: indexed.hint })
+      .explain('executionStats')
+    expect(JSON.stringify(plan)).toContain(STOREFRONT_SEARCH_INDEX)
+    expect(JSON.stringify(plan)).toContain('IXSCAN')
+    const cursor = (
+      plan as { stages: { $cursor?: { executionStats: { totalDocsExamined: number } } }[] }
+    ).stages.find((stage) => stage.$cursor)?.$cursor
+    expect(cursor?.executionStats.totalDocsExamined).toBeLessThan(34)
+    const unfiltered = storefrontMongoQuery({ page: 1 })
+    const plainPlan = await db
+      .collection('products')
+      .aggregate(unfiltered.pipeline, { hint: unfiltered.hint })
+      .explain('queryPlanner')
+    expect(JSON.stringify(plainPlan)).toContain(STOREFRONT_ORDER_INDEX)
+    const wire = await db
+      .collection('products')
+      .aggregate<{ items: object[]; count: { total: number }[] }>(unfiltered.pipeline, {
+        hint: unfiltered.hint,
+      })
+      .toArray()
+    expect(wire).toHaveLength(1)
+    expect(wire[0]?.items).toHaveLength(16)
+    expect(wire[0]?.count).toEqual([{ total: 34 }])
+    expect(wire[0]?.items[0]).not.toHaveProperty('storefrontSearchTokens')
+  })
+
+  it('backfills old canonical documents, rejects old writers and recomputes projection on replacement', async () => {
+    const product = catalogFixture(1, { description: 'Texto anterior', currency: 'USD' })
+    const document = toCanonicalDocument(product)
+    const old = { ...document }
+    delete (old as { storefrontSearchText?: string }).storefrontSearchText
+    delete (old as { storefrontSearchTokens?: readonly number[] }).storefrontSearchTokens
+    const collection = db.collection<CanonicalProductDocument>('products')
+    await collection.insertOne(old, { bypassDocumentValidation: true })
+    await migrateSearch(db)
+    await migrateSearch(db)
+    const query = new ListCatalogStorefront(products)
+    expect((await query.execute({ query: 'anterior' })).total).toBe(1)
+    await expect(collection.replaceOne({ _id: document._id }, old)).rejects.toThrow()
+    const updated = toCanonicalProduct({
+      ...document,
+      description: 'Texto renovado',
+      realMoneyPrice: { amount: Long.fromNumber(1234), currency: 'EUR' },
+      version: Long.fromNumber(1),
+    })
+    await products.update(updated, 0)
+    expect((await query.execute({ query: 'anterior' })).total).toBe(0)
+    expect(
+      (await query.execute({ query: 'renovado', currency: 'EUR', minPrice: 1234 })).total,
+    ).toBe(1)
+    expect((await query.execute({ query: '1234 eur' })).total).toBe(1)
+    // Force index candidates to collide; exact matching still excludes this document.
+    await collection.updateOne(
+      { _id: document._id },
+      { $set: { storefrontSearchTokens: Array.from({ length: SEARCH_BUCKETS }, (_, n) => n) } },
+    )
+    expect((await query.execute({ query: 'cadena inexistente' })).total).toBe(0)
   })
 
   it('stores a negative outcome with no partial stock and preserves it after restock', async () => {

@@ -23,11 +23,10 @@ import { normalizeProductName } from '../../../domain/entities/CanonicalProduct'
 import type { CanonicalProduct } from '../../../domain/entities/CanonicalProduct'
 import type { ProductId, ProductType } from '../../../domain/value-objects/canonical-product-values'
 import {
-  STOREFRONT_PAGE_SIZE,
   type CatalogStorefrontPort,
   type CatalogStorefrontQuery,
 } from '../../../application/ports/CatalogStorefrontPort'
-import { storefrontMatches } from '../../../domain/services/storefront-search'
+import { storefrontMongoQuery } from './storefront-search-projection'
 import {
   toCanonicalDocument,
   toCanonicalProduct,
@@ -110,14 +109,14 @@ export class MongoCanonicalProductRepository
   /**
    * Resuelve un producto canónico por `productId` (`_id`) o por su alias `sku`.
    * `type: { $exists: true }` deja fuera los documentos heredados que comparten
-   * la colección. El `$or` por igualdad exacta es elegible para los índices
-   * `_id` y `uniq_products_sku` existentes; no hace falta ninguno nuevo.
+   * la colección. La identidad canónica prevalece sobre el alias, igual que
+   * en memoria, incluso si otro producto usa un SKU con forma de UUID.
+   * Ambas búsquedas exactas usan los índices existentes de `_id` y `sku`.
    */
   async findByReference(reference: string): Promise<CanonicalProduct | null> {
-    const document = await this.products.findOne({
-      type: { $exists: true },
-      $or: [{ _id: reference }, { sku: reference }],
-    })
+    const document =
+      (await this.products.findOne({ _id: reference, type: { $exists: true } })) ??
+      (await this.products.findOne({ sku: reference, type: { $exists: true } }))
 
     return document === null ? null : toCanonicalProduct(document)
   }
@@ -125,36 +124,18 @@ export class MongoCanonicalProductRepository
   async listStorefront(
     query: CatalogStorefrontQuery,
   ): Promise<{ items: readonly CanonicalProduct[]; total: number }> {
-    const filter: Filter<CanonicalProductDocument> = {
-      lifecycleStatus: 'ACTIVE',
-      type: query.type ?? { $exists: true },
+    const { pipeline, hint } = storefrontMongoQuery(query)
+    const [result] = await this.products
+      .aggregate<{
+        items: CanonicalProductDocument[]
+        count: { total: number | Long }[]
+      }>(pipeline, { hint, allowDiskUse: true })
+      .toArray()
+    const total = result?.count[0]?.total ?? 0
+    return {
+      items: (result?.items ?? []).map(toCanonicalProduct),
+      total: typeof total === 'number' ? total : total.toNumber(),
     }
-    if (query.currency !== undefined) filter['realMoneyPrice.currency'] = query.currency
-    if (query.minPrice !== undefined || query.maxPrice !== undefined) {
-      filter['realMoneyPrice.amount'] = {
-        ...(query.minPrice === undefined ? {} : { $gte: Long.fromNumber(query.minPrice) }),
-        ...(query.maxPrice === undefined ? {} : { $lte: Long.fromNumber(query.maxPrice) }),
-      }
-    }
-    // One cursor over the server-filtered, stable ordering. Literal matching also
-    // covers nested attributes and prices without JavaScript in MongoDB or regex
-    // injection. Retain only one page in memory; total counts the complete match.
-    // This is not a full-text index: broad text queries scan the filtered set.
-    const cursor = this.products.find(filter).sort({ normalizedName: 1, _id: 1 })
-    const items: CanonicalProduct[] = []
-    const offset = (query.page - 1) * STOREFRONT_PAGE_SIZE
-    let total = 0
-    try {
-      for await (const document of cursor) {
-        const product = toCanonicalProduct(document)
-        if (!storefrontMatches(product.toSnapshot(), query.query)) continue
-        if (total >= offset && items.length < STOREFRONT_PAGE_SIZE) items.push(product)
-        total += 1
-      }
-    } finally {
-      await cursor.close()
-    }
-    return { items, total }
   }
 
   /**

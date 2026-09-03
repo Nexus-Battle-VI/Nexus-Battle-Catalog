@@ -38,14 +38,41 @@ real es entero en unidades menores de su moneda. Esta API no convierte divisas,
 no determina moneda por ubicación y no inventa promociones. Parámetros no
 declarados y rangos sin moneda devuelven 400.
 
-Mongo filtra estado, tipo y precio antes de recorrer un cursor con orden
-estable. La búsqueda literal cubre también atributos anidados y retiene solo
-una página en memoria. No se presenta como búsqueda full-text indexada: el
-texto amplio recorre el conjunto filtrado. El índice
-`idx_products_storefront_order` soporta estado y orden de la colección.
+Mongo ejecuta la búsqueda, los filtros AND y la paginación. La proyección
+`storefrontSearchText` conserva la misma normalización y todos los valores
+buscables. Ngrams de 1 a 3 unidades UTF-16 se agrupan en 4096 buckets hash
+deterministas, indexados por `idx_products_storefront_search_v1` junto al estado.
+Esto acota las claves de índice por producto sin recortar texto ni imponer
+un mínimo de caracteres. Las colisiones solo agregan candidatos: `$indexOfCP`
+comprueba después la coincidencia literal exacta dentro de Mongo, sin regex ni
+ejecución de JavaScript. La agregación ordena y usa `$facet` para devolver el
+total y hasta 16 documentos; los campos de búsqueda internos no se transfieren.
+Sin texto se usa `idx_products_storefront_order`.
+
+El índice tiene coste de almacenamiento y escritura, de hasta 4096 claves por
+producto. Una consulta de un carácter común o un producto con vocabulario muy
+grande puede producir muchos candidatos; se conserva el resultado correcto y
+la transferencia limitada a una página. No se afirma un tiempo constante.
+El límite existente de 256 KiB del payload canónico permanece sin cambios.
+
+La migración nueva `011-storefront-search` amplía el validador, rellena la
+proyección de los productos canónicos existentes, exige sus dos campos y crea
+el índice. Los documentos legacy conservan su esquema. Creaciones y reemplazos
+canónicos recalculan la proyección en `toCanonicalDocument`; reservas y ajustes
+de contadores no modifican información buscable.
+
+Despliegue: detener escritores canónicos antiguos, ejecutar las migraciones del
+binario nuevo y arrancar ese binario. No mantener versiones antiguas escribiendo
+durante el backfill: reemplazan el documento completo. Después de migrar, el
+validador rechaza esos reemplazos sin proyección. Una reversión necesita adaptar
+el escritor o una migración explícita; no basta arrancar la imagen anterior.
+La prueba DB verifica backfill, rechazo de escritor antiguo, actualización de
+precio/descripción, filtros, resultados literales y `IXSCAN` mediante `explain`.
 
 La lectura individual existente `GET /api/v1/catalog/products/:reference`
 resuelve UUID o SKU y también permite consultar `SUSPENDED` para Inventory.
+Si un alias tiene forma de UUID y coincide con otra identidad, prevalece el
+`productId` canónico; Mongo y memoria aplican la misma prioridad.
 `POST /api/v1/catalog/products/lookup` sigue acotado a referencias conocidas.
 La superficie legacy `/api/products` mantiene su contrato durante la migración;
 los nuevos consumidores deben usar la colección canónica.

@@ -37,6 +37,7 @@ const config: Config = {
     '!src/**/index.ts',
     '!src/main.ts',
     '!src/adapters/outbound/persistence/Mongo*.ts',
+    '!src/adapters/outbound/persistence/storefront-search-projection.ts',
     '!src/adapters/outbound/persistence/migrations/**',
     '!src/infrastructure/persistence/**',
   ],

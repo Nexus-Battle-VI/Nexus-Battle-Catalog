@@ -10,18 +10,23 @@ const searchableValues = (value: unknown): string => {
     : ''
 }
 
+export const normalizeStorefrontText = (text: string): string =>
+  text.normalize('NFKC').toLocaleLowerCase('es')
+
+export const storefrontSearchText = (product: CanonicalProductSnapshot): string =>
+  normalizeStorefrontText(
+    searchableValues([
+      product.sku,
+      product.name,
+      product.description,
+      product.type,
+      product.attributes,
+      product.creditsPrice,
+      product.realMoneyPrice,
+    ]),
+  )
+
 export const storefrontMatches = (product: CanonicalProductSnapshot, query?: string): boolean => {
   if (query === undefined || query.trim() === '') return true
-  const text = searchableValues([
-    product.sku,
-    product.name,
-    product.description,
-    product.type,
-    product.attributes,
-    product.creditsPrice,
-    product.realMoneyPrice,
-  ])
-    .normalize('NFKC')
-    .toLocaleLowerCase('es')
-  return text.includes(query.trim().normalize('NFKC').toLocaleLowerCase('es'))
+  return storefrontSearchText(product).includes(normalizeStorefrontText(query.trim()))
 }
