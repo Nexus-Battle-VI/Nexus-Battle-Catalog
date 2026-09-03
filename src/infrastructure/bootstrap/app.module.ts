@@ -30,6 +30,8 @@ import {
   LIST_PRODUCTS,
   PUBLISH_PRODUCT,
   CREATE_CANONICAL_PRODUCT,
+  GET_CANONICAL_PRODUCT_BY_REFERENCE,
+  LOOKUP_CANONICAL_PRODUCTS,
   ADJUST_PRODUCT_INVENTORY,
   GET_CANONICAL_PRODUCT,
   ACQUIRE_PRODUCT_UNIT,
@@ -51,6 +53,10 @@ import {
   PublishProduct,
 } from '../../application/use-cases/ProductUseCases'
 import { CreateCanonicalProduct } from '../../application/use-cases/CreateCanonicalProduct'
+import {
+  GetCanonicalProductByReference,
+  LookupCanonicalProducts,
+} from '../../application/use-cases/CanonicalProductQueries'
 import { CreateProductAssetUploadIntent } from '../../application/use-cases/CreateProductAssetUploadIntent'
 import { FinalizeProductAsset } from '../../application/use-cases/FinalizeProductAsset'
 import { GetProductAssetContent } from '../../application/use-cases/GetProductAssetContent'
@@ -98,6 +104,7 @@ import type { TokenVerifierPort } from '../../application/ports/TokenVerifierPor
 import { CognitoTokenVerifier } from '../../adapters/outbound/identity/CognitoTokenVerifier'
 import { ID_GENERATOR } from '../../application/ports/IdGeneratorPort'
 import {
+  CANONICAL_PRODUCT_READ,
   CANONICAL_PRODUCT_REPOSITORY,
   CANONICAL_PRODUCT_UNIT_OF_WORK,
   CANONICAL_PRODUCT_WRITE,
@@ -106,6 +113,7 @@ import {
   PRODUCT_OUTBOX_PORT,
   PRODUCT_ACQUISITION_PORT,
   PRODUCT_REFERENCE_QUERY,
+  type CanonicalProductReadPort,
   type CanonicalProductRepositoryPort,
   type CanonicalProductUnitOfWorkPort,
   type ProductAcquisitionPort,
@@ -248,6 +256,7 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
     },
     { provide: CANONICAL_PRODUCT_WRITE, useExisting: CANONICAL_PRODUCT_REPOSITORY },
     { provide: PRODUCT_REFERENCE_QUERY, useExisting: CANONICAL_PRODUCT_REPOSITORY },
+    { provide: CANONICAL_PRODUCT_READ, useExisting: CANONICAL_PRODUCT_REPOSITORY },
     { provide: HERO_SUBTYPE_REGISTRY, useFactory: () => new HeroSubtypeRegistryV1() },
     { provide: ID_GENERATOR, useFactory: (): IdGeneratorPort => new UuidGenerator() },
     {
@@ -480,6 +489,18 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         PRODUCT_ASSET_REPOSITORY_PORT,
         APP_CONFIG,
       ],
+    },
+    {
+      provide: GET_CANONICAL_PRODUCT_BY_REFERENCE,
+      useFactory: (products: CanonicalProductReadPort): GetCanonicalProductByReference =>
+        new GetCanonicalProductByReference(products),
+      inject: [CANONICAL_PRODUCT_READ],
+    },
+    {
+      provide: LOOKUP_CANONICAL_PRODUCTS,
+      useFactory: (products: CanonicalProductReadPort): LookupCanonicalProducts =>
+        new LookupCanonicalProducts(products),
+      inject: [CANONICAL_PRODUCT_READ],
     },
     {
       provide: PRODUCT_ASSET_REPOSITORY_PORT,
