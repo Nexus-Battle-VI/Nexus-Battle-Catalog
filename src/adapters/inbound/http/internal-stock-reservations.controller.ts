@@ -32,7 +32,7 @@ export class InternalStockReservationsController {
   @Post()
   @HttpCode(200)
   reserve(@Body() body: unknown): Promise<StockReservationResult> {
-    return this.execute(() => this.reservations.reserve(body))
+    return this.execute(() => this.reservations.reserve(body), true)
   }
 
   @Post(':reservationId/confirmation')
@@ -55,6 +55,7 @@ export class InternalStockReservationsController {
 
   private async execute(
     work: () => Promise<StockReservationResult>,
+    reserving = false,
   ): Promise<StockReservationResult> {
     try {
       return await work()
@@ -64,6 +65,8 @@ export class InternalStockReservationsController {
         throw new ConflictException({ code: 'RESERVATION_REJECTED', message: error.message })
       if (error instanceof StockReservationConflictError)
         throw new ConflictException({ code: 'RESERVATION_CONFLICT', message: error.message })
+      if (reserving && error instanceof StockReservationNotFoundError)
+        throw new NotFoundException({ code: 'RESERVATION_REJECTED', message: error.message })
       if (
         error instanceof StockReservationNotFoundError ||
         error instanceof CanonicalProductNotFoundError

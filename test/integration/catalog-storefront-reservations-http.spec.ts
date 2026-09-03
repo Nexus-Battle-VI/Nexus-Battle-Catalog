@@ -147,11 +147,12 @@ describe('Storefront and internal stock HTTP contract', () => {
     await signed(`${PATH}/dddddddd-dddd-4ddd-8ddd-dddddddddddd/confirmation`, {
       playerId: 'player',
     }).expect(404)
-    await signed(PATH, {
+    const missing = await signed(PATH, {
       ...body,
       reservationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
       lines: [{ productId: id, quantity: 1 }],
     }).expect(404)
+    expect(missing.body).toMatchObject({ code: 'RESERVATION_REJECTED' })
     expect((await products.findById(catalogFixture(2).productId))?.availableUnits).toBe(5)
   })
 })
