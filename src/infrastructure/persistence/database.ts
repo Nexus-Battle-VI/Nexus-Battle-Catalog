@@ -6,6 +6,8 @@ import * as migration003 from '../../adapters/outbound/persistence/migrations/00
 import * as migration004 from '../../adapters/outbound/persistence/migrations/004-canonical-products'
 import * as migration005 from '../../adapters/outbound/persistence/migrations/005-atomicity-audit-outbox'
 import * as migration006 from '../../adapters/outbound/persistence/migrations/006-product-assets'
+import * as migration007 from '../../adapters/outbound/persistence/migrations/007-print-run-availability'
+import * as migration008 from '../../adapters/outbound/persistence/migrations/008-product-acquisitions'
 import * as migration009 from '../../adapters/outbound/persistence/migrations/009-canonical-sku-read-index'
 
 export interface DatabaseOptions {
@@ -62,6 +64,8 @@ const MIGRATIONS: readonly { readonly name: string; readonly up: (db: Db) => Pro
   { name: '004-canonical-products', up: migration004.up },
   { name: '005-atomicity-audit-outbox', up: migration005.up },
   { name: '006-product-assets', up: migration006.up },
+  { name: '007-print-run-availability', up: migration007.up },
+  { name: '008-product-acquisitions', up: migration008.up },
   { name: '009-canonical-sku-read-index', up: migration009.up },
 ]
 

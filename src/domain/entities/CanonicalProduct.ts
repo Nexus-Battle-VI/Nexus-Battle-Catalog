@@ -11,6 +11,38 @@ import {
   type PrintRunMode,
 } from '../value-objects/canonical-product-values'
 import type { Money, ProductName, Sku } from '../value-objects/catalog-values'
+import { DomainError } from '../errors/DomainError'
+
+/**
+ * Comprueba que la disponibilidad y el tiraje digan lo mismo.
+ *
+ * Tiraje infinito exige `null`; cualquier otro modo exige un entero entre 0 y
+ * el tiraje. El limite superior es el que impide que un ajuste mal calculado
+ * deje mas unidades disponibles de las que el producto llegara a emitir.
+ */
+const assertAvailability = (printRun: PrintRun, availableUnits: number | null): void => {
+  if (printRun.isInfinite) {
+    if (availableUnits !== null) {
+      throw new DomainError(
+        `Un producto de tiraje infinito no lleva contador de unidades disponibles. Se recibio ${String(availableUnits)}.`,
+      )
+    }
+
+    return
+  }
+
+  if (availableUnits === null || !Number.isInteger(availableUnits)) {
+    throw new DomainError(
+      `Un producto de tiraje limitado necesita un contador entero de unidades disponibles. Se recibio ${String(availableUnits)}.`,
+    )
+  }
+
+  if (availableUnits < 0 || availableUnits > printRun.value) {
+    throw new DomainError(
+      `Las unidades disponibles deben estar entre 0 y el tiraje ${String(printRun.value)}. Se recibio ${String(availableUnits)}.`,
+    )
+  }
+}
 
 export interface CanonicalProductSnapshot {
   readonly productId: string
@@ -23,6 +55,16 @@ export interface CanonicalProductSnapshot {
   readonly attributes: ProductAttributes
   readonly printRun: number
   readonly printRunMode: PrintRunMode
+  /**
+   * Unidades que aun pueden emitirse. `null` en tiraje infinito, y ahi es un
+   * valor deliberado y no una ausencia: CA-03 exige que un producto infinito no
+   * lleve contador alguno.
+   *
+   * Las unidades ya entregadas NO se guardan porque son derivables:
+   * `printRun - availableUnits`. Un segundo contador solo anadiria una forma de
+   * que dos numeros que siempre deben cuadrar dejen de hacerlo.
+   */
+  readonly availableUnits: number | null
   readonly lifecycleStatus: LifecycleStatus
   readonly creditsPrice: number
   readonly premium: boolean
@@ -43,6 +85,7 @@ export class CanonicalProduct {
   readonly type: ProductType
   readonly attributes: ProductAttributes
   readonly printRun: PrintRun
+  readonly availableUnits: number | null
   readonly lifecycleStatus: LifecycleStatus
   readonly creditsPrice: CreditsPrice
   readonly premium: boolean
@@ -60,6 +103,7 @@ export class CanonicalProduct {
     type: ProductType
     attributes: ProductAttributes
     printRun: PrintRun
+    availableUnits: number | null
     pricing: ProductPricing
     createdAt: Date
     lifecycleStatus: LifecycleStatus
@@ -75,6 +119,13 @@ export class CanonicalProduct {
     this.type = params.type
     this.attributes = params.attributes
     this.printRun = params.printRun
+    // La invariante se comprueba aqui ADEMAS de en el validador de MongoDB.
+    // No es redundancia gratuita: el validador protege la base de escrituras
+    // por cualquier via, y esta comprobacion hace que un error de calculo falle
+    // en el dominio -donde se ve la causa- y no como un `Document failed
+    // validation` a cinco capas de distancia.
+    assertAvailability(params.printRun, params.availableUnits)
+    this.availableUnits = params.availableUnits
     this.creditsPrice = params.pricing.creditsPrice
     this.premium = params.pricing.premium
     this.realMoneyPrice = params.pricing.realMoneyPrice
@@ -98,6 +149,9 @@ export class CanonicalProduct {
   }): CanonicalProduct {
     return new CanonicalProduct({
       ...params,
+      // Un producto nace con todo su tiraje por emitir; infinito nace sin
+      // contador.
+      availableUnits: params.printRun.isInfinite ? null : params.printRun.value,
       lifecycleStatus: LifecycleStatus.Active,
       updatedAt: params.createdAt,
       version: 0,
@@ -113,6 +167,7 @@ export class CanonicalProduct {
     type: ProductType
     attributes: ProductAttributes
     printRun: PrintRun
+    availableUnits: number | null
     pricing: ProductPricing
     lifecycleStatus: LifecycleStatus
     createdAt: Date
@@ -120,6 +175,109 @@ export class CanonicalProduct {
     version?: number
   }): CanonicalProduct {
     return new CanonicalProduct(params)
+  }
+
+  /**
+   * Unidades ya entregadas. `null` en tiraje infinito, donde no se cuentan.
+   *
+   * SE DERIVA, no se guarda. La invariante `entregadas = tiraje - disponibles`
+   * se sostiene en los tres unicos momentos en que algo cambia: al crear
+   * -disponibles = tiraje, entregadas = 0-, al adquirir -disponibles baja uno,
+   * entregadas sube uno- y al ajustar el tiraje, que recalcula disponibles a
+   * partir de estas mismas entregadas. Guardar un segundo contador solo
+   * anadiria una forma de que los dos numeros dejaran de cuadrar.
+   */
+  get deliveredUnits(): number | null {
+    return this.availableUnits === null ? null : this.printRun.value - this.availableUnits
+  }
+
+  /** Un producto de tiraje limitado sin unidades disponibles. Infinito nunca. */
+  get isSoldOut(): boolean {
+    return this.availableUnits !== null && this.availableUnits === 0
+  }
+
+  /**
+   * Ajusta el tiraje y recalcula la disponibilidad (HU-34, CA-02).
+   *
+   * DEVUELVE UN AGREGADO NUEVO. La version no se toca aqui: el repositorio
+   * escribe condicionado a la version que leyo, de modo que dos ajustes
+   * simultaneos no pueden pisarse.
+   *
+   * De limitado a infinito se permite en cualquier momento. La conversion
+   * inversa NO: al pasar a infinito, `availableUnits` es null y las unidades
+   * entregadas dejan de ser derivables, asi que no hay con que comprobar la
+   * regla `nuevoTiraje >= entregadas`. Inventar ese numero seria peor que
+   * negarse; se rechaza de forma explicita.
+   */
+  adjustPrintRun(printRun: PrintRun, at: Date): CanonicalProduct {
+    const entregadas = this.deliveredUnits
+
+    if (printRun.isInfinite) {
+      return this.copyWith(printRun, null, at)
+    }
+
+    if (entregadas === null) {
+      throw new DomainError(
+        'Convertir un tiraje infinito en limitado no esta soportado: no hay registro de las unidades ya entregadas con el que comprobar la regla.',
+      )
+    }
+
+    if (printRun.value < entregadas) {
+      throw new DomainError(
+        `El tiraje no puede ser inferior a las unidades ya entregadas (${String(entregadas)}).`,
+      )
+    }
+
+    return this.copyWith(printRun, printRun.value - entregadas, at)
+  }
+
+  private copyWith(printRun: PrintRun, availableUnits: number | null, at: Date): CanonicalProduct {
+    return new CanonicalProduct({
+      productId: this.productId,
+      sku: this.sku,
+      name: this.name,
+      imageUrl: this.imageUrl,
+      description: this.description,
+      type: this.type,
+      attributes: this.attributes,
+      printRun,
+      availableUnits,
+      pricing: {
+        creditsPrice: this.creditsPrice,
+        premium: this.premium,
+        realMoneyPrice: this.realMoneyPrice,
+      },
+      lifecycleStatus: this.lifecycleStatus,
+      createdAt: this.createdAt,
+      updatedAt: at,
+      // La version AVANZA. Escribir un cambio conservandola dejaria la
+      // concurrencia optimista sin efecto: dos ajustes simultaneos leerian la
+      // misma version, y el segundo pisaria al primero sin que nada lo notara.
+      version: this.version + 1,
+    })
+  }
+
+  /**
+   * Consume una unidad.
+   *
+   * En tiraje infinito devuelve el mismo agregado, sin cambio alguno: CA-03
+   * exige que la adquisicion no toque el catalogo.
+   *
+   * El almacen de MongoDB NO pasa por aqui: alli el decremento es una sola
+   * operacion condicionada, porque leer-decidir-escribir deja una ventana en la
+   * que dos adquisiciones ven la misma ultima unidad. Este metodo expresa la
+   * misma regla para los almacenes que no pueden condicionar la escritura.
+   */
+  consumeUnit(at: Date): CanonicalProduct {
+    if (this.availableUnits === null) {
+      return this
+    }
+
+    if (this.availableUnits === 0) {
+      throw new DomainError(`El producto ${this.productId.value} esta agotado.`)
+    }
+
+    return this.copyWith(this.printRun, this.availableUnits - 1, at)
   }
 
   toSnapshot(): CanonicalProductSnapshot {
@@ -134,6 +292,7 @@ export class CanonicalProduct {
       attributes: this.attributes,
       printRun: this.printRun.value,
       printRunMode: this.printRun.mode,
+      availableUnits: this.availableUnits,
       lifecycleStatus: this.lifecycleStatus,
       creditsPrice: this.creditsPrice.value,
       premium: this.premium,

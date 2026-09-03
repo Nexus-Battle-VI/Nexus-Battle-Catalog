@@ -30,13 +30,6 @@ export class CanonicalProductSkuAlreadyExistsError extends Error {
   }
 }
 
-export class CanonicalProductNotFoundError extends Error {
-  constructor(reference: string) {
-    super(`No existe un producto canónico con la referencia "${reference}".`)
-    this.name = 'CanonicalProductNotFoundError'
-  }
-}
-
 export class CanonicalProductIdentityAlreadyExistsError extends Error {
   constructor(productId: string) {
     super(`La identidad canónica "${productId}" ya pertenece a otro producto.`)
@@ -138,5 +131,27 @@ export class ProductAssetStorageUnavailableError extends Error {
   ) {
     super(message)
     this.name = 'ProductAssetStorageUnavailableError'
+  }
+}
+
+/** El producto canónico solicitado no existe (HU-34). */
+export class CanonicalProductNotFoundError extends Error {
+  constructor(productId: string) {
+    super(`El producto ${productId} no existe.`)
+    this.name = 'CanonicalProductNotFoundError'
+  }
+}
+
+/**
+ * No quedan unidades disponibles (HU-34, CA-01).
+ *
+ * Es 409 y no 422: la peticion es correcta y lo que falla es el ESTADO del
+ * producto en ese instante. La misma peticion habria funcionado un segundo
+ * antes, y volvera a funcionar si el administrador amplia el tiraje.
+ */
+export class ProductSoldOutError extends Error {
+  constructor(productId: string) {
+    super(`Producto agotado: ${productId}.`)
+    this.name = 'ProductSoldOutError'
   }
 }

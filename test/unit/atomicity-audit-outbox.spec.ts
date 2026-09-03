@@ -40,6 +40,7 @@ describe('EN-027.6: Concurrencia optimista y Unidad Transaccional', () => {
         values: { kind: ProductType.Armor },
       } as unknown as ProductAttributes,
       printRun: PrintRun.create(-1),
+      availableUnits: null,
       pricing: ProductPricing.create({
         creditsPrice: CreditsPrice.create(100),
         premium: false,
@@ -109,6 +110,7 @@ describe('EN-027.7: Auditoría insert-only de Producto', () => {
       } as unknown as ProductAttributes,
       printRun: 1,
       printRunMode: PrintRunMode.Unique,
+      availableUnits: 1,
       lifecycleStatus: LifecycleStatus.Active,
       creditsPrice: 500,
       premium: false,

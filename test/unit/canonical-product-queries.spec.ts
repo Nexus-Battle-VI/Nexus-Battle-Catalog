@@ -1,5 +1,5 @@
 import {
-  GetCanonicalProduct,
+  GetCanonicalProductByReference,
   LookupCanonicalProducts,
 } from '../../src/application/use-cases/CanonicalProductQueries'
 import { CanonicalProductNotFoundError } from '../../src/application/errors/ApplicationError'
@@ -75,6 +75,7 @@ const buildProduct = (params: {
     return CanonicalProduct.restore({
       ...base,
       lifecycleStatus: LifecycleStatus.Suspended,
+      availableUnits: null,
       updatedAt: base.createdAt,
       version: 0,
     })
@@ -91,12 +92,12 @@ const seed = async (
   return product
 }
 
-describe('GetCanonicalProduct', () => {
+describe('GetCanonicalProductByReference', () => {
   it('resuelve por productId', async () => {
     const repo = new InMemoryCanonicalProductRepository()
     const product = await seed(repo, buildProduct({ name: 'Espada de Fuego' }))
 
-    const dto = await new GetCanonicalProduct(repo).execute(product.productId.value)
+    const dto = await new GetCanonicalProductByReference(repo).execute(product.productId.value)
 
     expect(dto).toMatchObject({
       productId: product.productId.value,
@@ -111,7 +112,7 @@ describe('GetCanonicalProduct', () => {
     const repo = new InMemoryCanonicalProductRepository()
     const product = await seed(repo, buildProduct({ name: 'Escudo', sku: 'escudo-de-dragon' }))
 
-    const dto = await new GetCanonicalProduct(repo).execute('  escudo-de-dragon  ')
+    const dto = await new GetCanonicalProductByReference(repo).execute('  escudo-de-dragon  ')
 
     expect(dto.productId).toBe(product.productId.value)
   })
@@ -123,7 +124,7 @@ describe('GetCanonicalProduct', () => {
       buildProduct({ name: 'Reliquia Retirada', lifecycleStatus: LifecycleStatus.Suspended }),
     )
 
-    const dto = await new GetCanonicalProduct(repo).execute(product.productId.value)
+    const dto = await new GetCanonicalProductByReference(repo).execute(product.productId.value)
 
     expect(dto.lifecycleStatus).toBe(LifecycleStatus.Suspended)
   })
@@ -131,9 +132,9 @@ describe('GetCanonicalProduct', () => {
   it('lanza CanonicalProductNotFoundError cuando la referencia no existe', async () => {
     const repo = new InMemoryCanonicalProductRepository()
 
-    await expect(new GetCanonicalProduct(repo).execute('no-existe')).rejects.toBeInstanceOf(
-      CanonicalProductNotFoundError,
-    )
+    await expect(
+      new GetCanonicalProductByReference(repo).execute('no-existe'),
+    ).rejects.toBeInstanceOf(CanonicalProductNotFoundError)
   })
 })
 

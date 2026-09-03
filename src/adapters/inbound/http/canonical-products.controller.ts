@@ -30,14 +30,14 @@ import {
 import type { CanonicalProductDto } from '../../../application/dto/CanonicalProductDto'
 import type { CreateCanonicalProduct } from '../../../application/use-cases/CreateCanonicalProduct'
 import type {
-  GetCanonicalProduct,
+  GetCanonicalProductByReference,
   LookupCanonicalProducts,
   LookupCanonicalProductsResult,
 } from '../../../application/use-cases/CanonicalProductQueries'
 import { Role, type VerifiedIdentity } from '../../../application/ports/TokenVerifierPort'
 import {
   CREATE_CANONICAL_PRODUCT,
-  GET_CANONICAL_PRODUCT,
+  GET_CANONICAL_PRODUCT_BY_REFERENCE,
   LOOKUP_CANONICAL_PRODUCTS,
 } from './tokens'
 import { CurrentIdentity, Public, RequiresMfaEvidence, Roles } from './auth/decorators'
@@ -56,8 +56,8 @@ export class CanonicalProductsController {
   constructor(
     @Inject(CREATE_CANONICAL_PRODUCT)
     private readonly createCanonicalProduct: CreateCanonicalProduct,
-    @Inject(GET_CANONICAL_PRODUCT)
-    private readonly getCanonicalProduct: GetCanonicalProduct,
+    @Inject(GET_CANONICAL_PRODUCT_BY_REFERENCE)
+    private readonly getCanonicalProduct: GetCanonicalProductByReference,
     @Inject(LOOKUP_CANONICAL_PRODUCTS)
     private readonly lookupCanonicalProducts: LookupCanonicalProducts,
   ) {}

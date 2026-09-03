@@ -14,6 +14,7 @@ import {
   CanonicalProductSkuAlreadyExistsError,
 } from '../../../application/errors/ApplicationError'
 import type {
+  AvailabilityDecrement,
   CanonicalProductLookupQuery,
   CanonicalProductRepositoryPort,
   TransactionContext,
@@ -24,6 +25,7 @@ import type { ProductId, ProductType } from '../../../domain/value-objects/canon
 import {
   toCanonicalDocument,
   toCanonicalProduct,
+  toCanonicalSnapshot,
   type CanonicalProductDocument,
 } from './canonical-mapping'
 
@@ -151,6 +153,68 @@ export class MongoCanonicalProductRepository implements CanonicalProductReposito
       })
       .sort((left, right) => left.name.localeCompare(right.name))
       .map((document) => toCanonicalProduct(document))
+  }
+
+  /**
+   * Resta UNA unidad en una sola operacion condicionada (HU-34, CA-01).
+   *
+   * LA CONDICION VIAJA DENTRO DE LA ESCRITURA. `availableUnits: { $gt: 0 }`
+   * forma parte del filtro, asi que MongoDB decide y escribe sin soltar el
+   * documento. Dos peticiones simultaneas por la ultima unidad: una encuentra
+   * documento y la otra no. Leer primero y escribir despues -aunque fuera
+   * dentro de una transaccion- dejaria una ventana en la que las dos ven la
+   * misma unidad disponible.
+   *
+   * NO hace falta transaccion para esto. La atomicidad de documento de MongoDB
+   * ya lo garantiza, y una transaccion solo anadiria reintentos por conflicto
+   * de escritura justo en el punto de mayor contencion.
+   *
+   * TIRAJE INFINITO NO ESCRIBE NADA. El filtro exige `printRunMode` distinto de
+   * `INFINITE`; si no hubo coincidencia se comprueba si el producto es infinito
+   * y se devuelve disponibilidad `null` sin haberlo tocado, que es lo que pide
+   * CA-03.
+   *
+   * `null` significa «no habia nada que restar»: el producto no existe o esta
+   * agotado. Quien llama traduce eso a 404 o a 409.
+   */
+  async decrementAvailability(
+    productId: ProductId,
+    context?: TransactionContext,
+  ): Promise<AvailabilityDecrement | null> {
+    const session = context?.session ? (context.session as ClientSession) : undefined
+
+    const actualizado = await this.products.findOneAndUpdate(
+      {
+        _id: productId.value,
+        printRunMode: { $ne: 'INFINITE' },
+        availableUnits: { $gt: Long.fromNumber(0) },
+      },
+      {
+        $inc: { availableUnits: Long.fromNumber(-1), version: Long.fromNumber(1) },
+        $set: { updatedAt: new Date() },
+      },
+      { session, returnDocument: 'after' },
+    )
+
+    if (actualizado !== null) {
+      const restantes = toCanonicalSnapshot(actualizado).availableUnits
+
+      return { availableUnits: restantes, depleted: restantes === 0 }
+    }
+
+    // Sin coincidencia hay tres causas posibles y NO son la misma respuesta:
+    // el producto no existe, es infinito -y entonces la adquisicion es valida
+    // sin tocar nada- o esta agotado.
+    const documento = await this.products.findOne(
+      { _id: productId.value, type: { $exists: true } },
+      { session },
+    )
+
+    if (documento === null) {
+      return null
+    }
+
+    return documento.printRunMode === 'INFINITE' ? { availableUnits: null, depleted: false } : null
   }
 
   private translateDuplicate(error: unknown, product: CanonicalProduct): never {

@@ -54,15 +54,66 @@ export interface TransactionContext {
   readonly session?: unknown
 }
 
+/** Resultado del decremento condicionado de disponibilidad (HU-34, CA-01). */
+export interface AvailabilityDecrement {
+  /** Unidades que quedan tras el decremento. `null` en tiraje infinito. */
+  readonly availableUnits: number | null
+  /** Cierto cuando este decremento fue el que dejo el producto en cero. */
+  readonly depleted: boolean
+}
+
 /** Puerto que implementa la escritura canónica de productos, con soporte transaccional. */
 export interface CanonicalProductWritePort {
   existsByNormalizedNameAndType(normalizedName: string, type: ProductType): Promise<boolean>
   create(product: CanonicalProduct, context?: TransactionContext): Promise<void>
+  findById(productId: ProductId): Promise<CanonicalProduct | null>
+  update(
+    product: CanonicalProduct,
+    expectedVersion: number,
+    context?: TransactionContext,
+  ): Promise<void>
+  /**
+   * Resta UNA unidad de forma atomica y condicionada.
+   *
+   * Devuelve `null` cuando no hay nada que restar -producto inexistente o
+   * agotado-. La condicion viaja DENTRO de la operacion de escritura: leer,
+   * decidir y escribir por separado deja una ventana en la que dos
+   * adquisiciones simultaneas pueden ver la misma ultima unidad.
+   *
+   * En tiraje infinito NO escribe nada y devuelve disponibilidad `null`: CA-03
+   * exige que la adquisicion no toque el catalogo.
+   */
+  decrementAvailability(
+    productId: ProductId,
+    context?: TransactionContext,
+  ): Promise<AvailabilityDecrement | null>
 }
 
 /** Almacén canónico completo durante la transición aditiva de ADR-013. */
 export interface CanonicalProductRepositoryPort
   extends CanonicalProductWritePort, ProductReferenceQueryPort, CanonicalProductReadPort {}
+
+/** Resultado registrado de una adquisición, para responder igual ante un reintento. */
+export interface AcquisitionRecord {
+  readonly acquisitionId: string
+  readonly productId: string
+  readonly playerId: string
+  readonly availableUnits: number | null
+  readonly at: Date
+}
+
+/**
+ * Registro de adquisiciones consumidas, que es lo que da idempotencia.
+ *
+ * Sin el, un reintento de la llamada interna -un tiempo de espera agotado en
+ * quien llama, con la peticion ya procesada- restaria una segunda unidad. Y ese
+ * error no se ve: el producto simplemente se agota antes de lo que debia.
+ */
+export interface ProductAcquisitionPort {
+  /** Reserva el identificador. Devuelve `null` si ya estaba consumido. */
+  claim(record: AcquisitionRecord, context?: TransactionContext): Promise<AcquisitionRecord | null>
+  findById(acquisitionId: string): Promise<AcquisitionRecord | null>
+}
 
 /** Unidad de trabajo para coordinar transacciones atómicas (ADR-015 / EN-027.6). */
 export interface CanonicalProductUnitOfWorkPort {
@@ -136,3 +187,4 @@ export const CANONICAL_PRODUCT_REPOSITORY = Symbol('CanonicalProductRepositoryPo
 export const CANONICAL_PRODUCT_UNIT_OF_WORK = Symbol('CanonicalProductUnitOfWorkPort')
 export const PRODUCT_AUDIT_PORT = Symbol('ProductAuditPort')
 export const PRODUCT_OUTBOX_PORT = Symbol('ProductOutboxPort')
+export const PRODUCT_ACQUISITION_PORT = Symbol('ProductAcquisitionPort')

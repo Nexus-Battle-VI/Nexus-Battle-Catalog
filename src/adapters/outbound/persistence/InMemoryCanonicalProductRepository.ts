@@ -5,6 +5,7 @@ import {
   CanonicalProductSkuAlreadyExistsError,
 } from '../../../application/errors/ApplicationError'
 import type {
+  AvailabilityDecrement,
   CanonicalProductLookupQuery,
   CanonicalProductRepositoryPort,
 } from '../../../application/ports/CanonicalProductPorts'
@@ -108,5 +109,32 @@ export class InMemoryCanonicalProductRepository implements CanonicalProductRepos
       .sort((left, right) => left.name.value.localeCompare(right.name.value))
 
     return Promise.resolve(items)
+  }
+
+  findById(productId: ProductId): Promise<CanonicalProduct | null> {
+    return Promise.resolve(this.byId.get(productId.value) ?? null)
+  }
+
+  /**
+   * Decremento sin condicion real: este almacen es de un solo proceso.
+   *
+   * NO reproduce la garantia de MongoDB y no debe usarse para razonar sobre
+   * concurrencia. La prueba que responde a CA-01 corre contra un MongoDB de
+   * verdad, no contra esto.
+   */
+  decrementAvailability(productId: ProductId): Promise<AvailabilityDecrement | null> {
+    const current = this.byId.get(productId.value)
+
+    if (current === undefined || current.isSoldOut) {
+      return Promise.resolve(null)
+    }
+
+    const consumido = current.consumeUnit(new Date())
+    this.byId.set(productId.value, consumido)
+
+    return Promise.resolve({
+      availableUnits: consumido.availableUnits,
+      depleted: consumido.isSoldOut,
+    })
   }
 }

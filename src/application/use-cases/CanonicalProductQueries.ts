@@ -15,8 +15,12 @@ export const MAX_LOOKUP_REFERENCES = 500
  * alias `sku`. Devuelve la información vigente, incluida `lifecycleStatus`, para
  * cualquier estado del ciclo de vida: un producto SUSPENDED sigue siendo
  * consultable porque un jugador puede poseerlo.
+ *
+ * Es la lectura PÚBLICA por referencia. No debe confundirse con
+ * `GetCanonicalProduct` (HU-34), que es la lectura administrativa por
+ * `productId` bajo `v1/admin` y expone disponibilidad.
  */
-export class GetCanonicalProduct {
+export class GetCanonicalProductByReference {
   private readonly products: CanonicalProductReadPort
 
   constructor(products: CanonicalProductReadPort) {
