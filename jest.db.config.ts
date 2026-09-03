@@ -29,6 +29,9 @@ const config: Config = {
   collectCoverageFrom: [
     'src/adapters/outbound/persistence/MongoProductRepository.ts',
     'src/adapters/outbound/persistence/MongoCanonicalProductRepository.ts',
+    'src/adapters/outbound/persistence/MongoStockReservationRepository.ts',
+    'src/adapters/outbound/persistence/storefront-search-projection.ts',
+    'src/adapters/outbound/persistence/migrations/011-storefront-search.ts',
     'src/infrastructure/persistence/**/*.ts',
     '!src/infrastructure/persistence/migrate.ts',
   ],

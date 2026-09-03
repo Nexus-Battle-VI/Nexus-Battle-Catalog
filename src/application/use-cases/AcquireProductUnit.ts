@@ -7,6 +7,7 @@ import {
 import { CanonicalProductNotFoundError, ProductSoldOutError } from '../errors/ApplicationError'
 import type { ClockPort } from '../ports/ClockPort'
 import type { IdGeneratorPort } from '../ports/IdGeneratorPort'
+import { StockReservationConflictError } from './StockReservations'
 import {
   OutboxStatus,
   type CanonicalProductUnitOfWorkPort,
@@ -71,6 +72,10 @@ export class AcquireProductUnit {
     const yaProcesada = await this.deps.acquisitions.findById(acquisitionId)
 
     if (yaProcesada !== null) {
+      if (yaProcesada.productId !== productId.value || yaProcesada.playerId !== playerId)
+        throw new StockReservationConflictError(
+          'acquisitionId ya identifica otro producto o jugador.',
+        )
       return {
         productId: yaProcesada.productId,
         acquisitionId,
@@ -92,6 +97,9 @@ export class AcquireProductUnit {
         if (producto === null) {
           throw new CanonicalProductNotFoundError(productId.value)
         }
+
+        if (producto.lifecycleStatus !== 'ACTIVE')
+          throw new StockReservationConflictError('El producto está suspendido.')
 
         throw new ProductSoldOutError(productId.value)
       }
@@ -163,6 +171,10 @@ export class AcquireProductUnit {
       if (registrada === null) {
         throw error
       }
+      if (registrada.productId !== productId.value || registrada.playerId !== playerId)
+        throw new StockReservationConflictError(
+          'acquisitionId ya identifica otro producto o jugador.',
+        )
 
       return {
         productId: registrada.productId,
