@@ -1,10 +1,11 @@
 import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/mongodb'
-import type { Collection, Db, MongoClient } from 'mongodb'
+import { Long, type Collection, type Db, type MongoClient } from 'mongodb'
 
 import { MongoCanonicalProductRepository } from '../../src/adapters/outbound/persistence/MongoCanonicalProductRepository'
 import { MongoProductRepository } from '../../src/adapters/outbound/persistence/MongoProductRepository'
 import {
   toCanonicalDocument,
+  toCanonicalProduct,
   toCanonicalSnapshot,
   type CanonicalProductDocument,
 } from '../../src/adapters/outbound/persistence/canonical-mapping'
@@ -346,24 +347,20 @@ describe('MongoCanonicalProductRepository', () => {
     const product = buildProduct(...ATTRIBUTE_FIXTURES[0])
     await repository.create(product)
 
-    const updated = CanonicalProduct.restore({
-      ...toCanonicalSnapshot(product),
-      version: 1,
-    })
+    const doc = toCanonicalDocument(product)
+    const updated = toCanonicalProduct({ ...doc, version: Long.fromNumber(1) })
     await expect(repository.update(updated, 0)).resolves.toBeUndefined()
 
     const found = await products().findOne({ _id: product.productId.value })
-    expect(found?.version.toNumber()).toBe(1)
+    expect(found?.version ? Long.fromValue(found.version).toNumber() : 0).toBe(1)
   })
 
   it('rechaza la actualización con conflicto de concurrencia si la versión difiere', async () => {
     const product = buildProduct(...ATTRIBUTE_FIXTURES[1])
     await repository.create(product)
 
-    const staleWriter = CanonicalProduct.restore({
-      ...toCanonicalSnapshot(product),
-      version: 1,
-    })
+    const doc = toCanonicalDocument(product)
+    const staleWriter = toCanonicalProduct({ ...doc, version: Long.fromNumber(1) })
     await expect(repository.update(staleWriter, 99)).rejects.toBeInstanceOf(
       CanonicalProductConcurrencyConflictError,
     )
