@@ -10,6 +10,7 @@ import {
 } from '../../src/adapters/outbound/persistence/canonical-mapping'
 import {
   CanonicalProductAlreadyExistsError,
+  CanonicalProductConcurrencyConflictError,
   CanonicalProductIdentityAlreadyExistsError,
   CanonicalProductSkuAlreadyExistsError,
 } from '../../src/application/errors/ApplicationError'
@@ -339,5 +340,32 @@ describe('MongoCanonicalProductRepository', () => {
 
     await expect(products().insertOne(document)).rejects.toThrow()
     expect(await products().countDocuments({ _id: product.productId.value })).toBe(0)
+  })
+
+  it('actualiza un producto cuando la versión esperada coincide', async () => {
+    const product = buildProduct(...ATTRIBUTE_FIXTURES[0])
+    await repository.create(product)
+
+    const updated = CanonicalProduct.restore({
+      ...toCanonicalSnapshot(product),
+      version: 1,
+    })
+    await expect(repository.update(updated, 0)).resolves.toBeUndefined()
+
+    const found = await products().findOne({ _id: product.productId.value })
+    expect(found?.version.toNumber()).toBe(1)
+  })
+
+  it('rechaza la actualización con conflicto de concurrencia si la versión difiere', async () => {
+    const product = buildProduct(...ATTRIBUTE_FIXTURES[1])
+    await repository.create(product)
+
+    const staleWriter = CanonicalProduct.restore({
+      ...toCanonicalSnapshot(product),
+      version: 1,
+    })
+    await expect(repository.update(staleWriter, 99)).rejects.toBeInstanceOf(
+      CanonicalProductConcurrencyConflictError,
+    )
   })
 })
