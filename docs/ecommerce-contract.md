@@ -122,14 +122,15 @@ Repetir POST de reserva idéntico devuelve su estado actual con `replayed: true`
 no reactiva una reserva RELEASED. Confirmación/liberación verifican el jugador.
 Si un producto pasó de finito a infinito, liberar no inventa un contador.
 
-| Respuesta                  | Significado y recuperación                                                                          |
-| -------------------------- | --------------------------------------------------------------------------------------------------- |
-| 400                        | Forma inválida, UUID, cantidad, campos desconocidos o producto duplicado.                           |
-| 401                        | Firma ausente/incorrecta, servicio no permitido o timestamp vencido.                                |
-| 404                        | Producto ausente al reservar (resultado negativo durable), o reserva ausente al transicionar.       |
-| 409 `RESERVATION_REJECTED` | Stock insuficiente o producto inactivo; lote no aplicado, resultado negativo durable.               |
-| 409 `RESERVATION_CONFLICT` | Misma identidad con otro payload/jugador o transición incompatible; no inferir ausencia de efectos. |
-| 503                        | Configuración/dependencia no disponible; conservar identidad y reintentar.                          |
+| Respuesta                  | Significado y recuperación                                                                                        |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 400                        | Forma inválida, UUID, cantidad, campos desconocidos o producto duplicado.                                         |
+| 401                        | Firma ausente/incorrecta, servicio no permitido o timestamp vencido.                                              |
+| 404 `RESERVATION_REJECTED` | Producto ausente al reservar; resultado negativo durable sin efectos de stock.                                    |
+| 404                        | Reserva ausente al transicionar, o producto ausente durante liberación; no certifica rechazo inicial sin efectos. |
+| 409 `RESERVATION_REJECTED` | Stock insuficiente o producto inactivo; lote no aplicado, resultado negativo durable.                             |
+| 409 `RESERVATION_CONFLICT` | Misma identidad con otro payload/jugador o transición incompatible; no inferir ausencia de efectos.               |
+| 503                        | Configuración/dependencia no disponible; conservar identidad y reintentar.                                        |
 
 No hay expiración automática: podría liberar stock de una entrega que Commerce
 ya ejecutó y aún está recuperando. Commerce coordina **reserva → grant de lote
