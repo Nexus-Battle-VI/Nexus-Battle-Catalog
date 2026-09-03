@@ -15,6 +15,7 @@ import { AdminProductsController } from '../../adapters/inbound/http/admin-produ
 import { InternalProductAcquisitionsController } from '../../adapters/inbound/http/internal-product-acquisitions.controller'
 import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
 import { AdjustProductInventory } from '../../application/use-cases/AdjustProductInventory'
+import { GetCanonicalProduct } from '../../application/use-cases/GetCanonicalProduct'
 import { AcquireProductUnit } from '../../application/use-cases/AcquireProductUnit'
 import { MongoProductAcquisitionRepository } from '../../adapters/outbound/persistence/MongoProductAcquisitionRepository'
 import { InMemoryProductAcquisitionRepository } from '../../adapters/outbound/persistence/InMemoryProductAcquisitionRepository'
@@ -30,6 +31,7 @@ import {
   PUBLISH_PRODUCT,
   CREATE_CANONICAL_PRODUCT,
   ADJUST_PRODUCT_INVENTORY,
+  GET_CANONICAL_PRODUCT,
   ACQUIRE_PRODUCT_UNIT,
   CREATE_PRODUCT_ASSET_UPLOAD_INTENT,
   FINALIZE_PRODUCT_ASSET,
@@ -413,6 +415,12 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         PRODUCT_AUDIT_PORT,
         PRODUCT_OUTBOX_PORT,
       ],
+    },
+    {
+      provide: GET_CANONICAL_PRODUCT,
+      useFactory: (products: CanonicalProductRepositoryPort): GetCanonicalProduct =>
+        new GetCanonicalProduct({ products }),
+      inject: [CANONICAL_PRODUCT_WRITE],
     },
     {
       provide: ACQUIRE_PRODUCT_UNIT,

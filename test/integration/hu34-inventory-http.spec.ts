@@ -144,13 +144,14 @@ describe('HU-34 sobre HTTP', () => {
     it('devuelve la disponibilidad recalculada y el producto creado la trae', async () => {
       const id = await crearProducto('escudo-uno', 200)
 
+      // La lectura administrativa existe para que la pantalla pueda mostrar la
+      // disponibilidad ANTES de ajustarla.
       const creado = await request(app.getHttpServer())
-        .get(`/api/v1/catalog/products/${id}`)
+        .get(`/api/v1/admin/products/${id}`)
         .set('Authorization', 'Bearer token-admin')
+        .expect(200)
 
-      // La lectura canonica puede no existir todavia; lo que importa aqui es
-      // que el ajuste responda con el contador.
-      expect([200, 404]).toContain(creado.status)
+      expect(creado.body).toMatchObject({ printRun: 200, availableUnits: 200 })
 
       const respuesta = await request(app.getHttpServer())
         .patch(`/api/v1/admin/products/${id}/inventory`)
@@ -207,6 +208,17 @@ describe('HU-34 sobre HTTP', () => {
         .patch(`/api/v1/admin/products/${id}/inventory`)
         .set('Authorization', 'Bearer token-jugador')
         .send({ printRun: 20 })
+        .expect(403)
+    })
+
+    it('la lectura administrativa esta protegida por rol', async () => {
+      const id = await crearProducto('escudo-lectura', 10)
+
+      await request(app.getHttpServer()).get(`/api/v1/admin/products/${id}`).expect(401)
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/admin/products/${id}`)
+        .set('Authorization', 'Bearer token-jugador')
         .expect(403)
     })
 
