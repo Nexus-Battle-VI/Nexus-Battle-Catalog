@@ -365,4 +365,162 @@ describe('MongoCanonicalProductRepository', () => {
       CanonicalProductConcurrencyConflictError,
     )
   })
+
+  describe('lectura por referencia y por lote (HU-27)', () => {
+    it('findByReference resuelve por productId y por alias sku', async () => {
+      const product = buildProduct(...ATTRIBUTE_FIXTURES[2], {
+        productId: '99999999-9999-4999-8999-999999999999',
+        sku: 'espada-referencia',
+      })
+      await repository.create(product)
+
+      const byId = await repository.findByReference(product.productId.value)
+      const bySku = await repository.findByReference('espada-referencia')
+
+      expect(byId?.toSnapshot()).toEqual(product.toSnapshot())
+      expect(bySku?.toSnapshot()).toEqual(product.toSnapshot())
+      await expect(repository.findByReference('no-existe')).resolves.toBeNull()
+    })
+
+    it('findByReference no resuelve un documento heredado por su SKU', async () => {
+      const legacyRepository = new MongoProductRepository(db)
+      await legacyRepository.create(
+        Product.draft({
+          sku: Sku.create('solo-heredado'),
+          name: ProductName.create('Solo heredado'),
+          category: Category.create('armas'),
+          price: Money.create(100, 'COP'),
+        }),
+      )
+
+      await expect(repository.findByReference('solo-heredado')).resolves.toBeNull()
+    })
+
+    it('findByReferences resuelve un lote en una sola consulta y respeta el conjunto pedido', async () => {
+      const a = buildProduct(...ATTRIBUTE_FIXTURES[2], { name: 'Lote A', sku: 'lote-a' })
+      const b = buildProduct(...ATTRIBUTE_FIXTURES[4], { name: 'Lote B', sku: 'lote-b' })
+      const fuera = buildProduct(...ATTRIBUTE_FIXTURES[2], { name: 'Fuera', sku: 'fuera' })
+      await repository.create(a)
+      await repository.create(b)
+      await repository.create(fuera)
+
+      const found = await repository.findByReferences({
+        references: [a.productId.value, 'lote-b', 'fantasma'],
+      })
+
+      expect(found.map((product) => product.productId.value).sort()).toEqual(
+        [a.productId.value, b.productId.value].sort(),
+      )
+    })
+
+    it('findByReferences filtra por substring de nombre normalizado y por tipo', async () => {
+      const espada = buildProduct(...ATTRIBUTE_FIXTURES[2], {
+        name: 'Espada Rúnica',
+        sku: 'espada-runica',
+      })
+      const item = buildProduct(...ATTRIBUTE_FIXTURES[4], {
+        name: 'Espada de bolsillo (ITEM)',
+        sku: 'espada-item',
+      })
+      await repository.create(espada)
+      await repository.create(item)
+
+      const porNombre = await repository.findByReferences({
+        references: ['espada-runica', 'espada-item'],
+        nameQuery: 'rúnica',
+      })
+      const porTipo = await repository.findByReferences({
+        references: ['espada-runica', 'espada-item'],
+        type: ProductType.Weapon,
+      })
+
+      expect(porNombre.map((product) => product.sku.value)).toEqual(['espada-runica'])
+      expect(porTipo.map((product) => product.sku.value)).toEqual(['espada-runica'])
+    })
+
+    it('findByReferences devuelve también productos SUSPENDED que el consumidor posee', async () => {
+      const active = buildProduct(...ATTRIBUTE_FIXTURES[2], { name: 'Activo', sku: 'activo' })
+      await repository.create(active)
+      const suspendedDoc = {
+        ...toCanonicalDocument(
+          buildProduct(...ATTRIBUTE_FIXTURES[2], { name: 'Suspendido', sku: 'suspendido' }),
+        ),
+        lifecycleStatus: 'SUSPENDED' as const,
+      }
+      await products().insertOne(suspendedDoc)
+
+      const found = await repository.findByReferences({ references: ['activo', 'suspendido'] })
+
+      expect(found.map((product) => product.lifecycleStatus).sort()).toEqual([
+        'ACTIVE',
+        'SUSPENDED',
+      ])
+    })
+
+    it('findByReferences con un tratamiento de término literal no interpreta metacaracteres', async () => {
+      const product = buildProduct(...ATTRIBUTE_FIXTURES[2], {
+        name: 'Arma Normal',
+        sku: 'arma-normal',
+      })
+      await repository.create(product)
+
+      const found = await repository.findByReferences({
+        references: ['arma-normal'],
+        nameQuery: 'a.*a',
+      })
+
+      expect(found).toEqual([])
+    })
+
+    /**
+     * La consulta a Mongo de `findByReferences` es un lookup por referencia
+     * (`_id` / `sku`): acota el universo por índice y NO recorre la colección
+     * entera. El filtrado por nombre y por tipo ocurre en memoria sobre ese
+     * conjunto ya pequeño — no es un índice de texto. Se comprueba con
+     * `executionStats`: al pedir 3 referencias de una colección de 60, se
+     * examinan pocos documentos, no los 60.
+     */
+    it('el lookup por referencia examina pocos documentos, no toda la colección', async () => {
+      for (let index = 0; index < 60; index += 1) {
+        await repository.create(
+          buildProduct(...ATTRIBUTE_FIXTURES[2], {
+            name: `Producto Plan ${String(index)}`,
+            sku: `plan-${String(index).padStart(2, '0')}`,
+          }),
+        )
+      }
+
+      const references = ['plan-01', 'plan-30', 'plan-57']
+      const stats = (await products()
+        .find({
+          type: { $exists: true },
+          $or: [{ _id: { $in: references } }, { sku: { $in: references } }],
+        })
+        .explain('executionStats')) as {
+        executionStats: { totalDocsExamined: number; nReturned: number }
+      }
+
+      expect(stats.executionStats.nReturned).toBe(3)
+      // Un COLLSCAN examinaría los 60. Con el índice, del orden de las 3 pedidas.
+      expect(stats.executionStats.totalDocsExamined).toBeLessThanOrEqual(12)
+    })
+
+    it('findByReferences no recorre la colección para resolver un lote pequeño', async () => {
+      for (let index = 0; index < 40; index += 1) {
+        await repository.create(
+          buildProduct(...ATTRIBUTE_FIXTURES[2], {
+            name: `Lote Grande ${String(index)}`,
+            sku: `lote-grande-${String(index).padStart(2, '0')}`,
+          }),
+        )
+      }
+
+      const found = await repository.findByReferences({
+        references: ['lote-grande-05', 'lote-grande-20'],
+        nameQuery: 'lote grande 20',
+      })
+
+      expect(found.map((product) => product.sku.value)).toEqual(['lote-grande-20'])
+    })
+  })
 })

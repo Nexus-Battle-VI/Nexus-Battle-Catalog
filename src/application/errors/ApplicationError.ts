@@ -30,6 +30,13 @@ export class CanonicalProductSkuAlreadyExistsError extends Error {
   }
 }
 
+export class CanonicalProductNotFoundError extends Error {
+  constructor(reference: string) {
+    super(`No existe un producto canónico con la referencia "${reference}".`)
+    this.name = 'CanonicalProductNotFoundError'
+  }
+}
+
 export class CanonicalProductIdentityAlreadyExistsError extends Error {
   constructor(productId: string) {
     super(`La identidad canónica "${productId}" ya pertenece a otro producto.`)

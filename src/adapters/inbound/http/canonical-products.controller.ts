@@ -2,9 +2,12 @@ import {
   Body,
   ConflictException,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Inject,
+  NotFoundException,
+  Param,
   Post,
   BadRequestException,
   UnprocessableEntityException,
@@ -16,6 +19,7 @@ import {
   CanonicalProductAlreadyExistsError,
   CanonicalProductConcurrencyConflictError,
   CanonicalProductIdentityAlreadyExistsError,
+  CanonicalProductNotFoundError,
   CanonicalProductSkuAlreadyExistsError,
   HeroSubtypeBranchMismatchError,
   InvalidAbilityReferenceError,
@@ -25,12 +29,26 @@ import {
 } from '../../../application/errors/ApplicationError'
 import type { CanonicalProductDto } from '../../../application/dto/CanonicalProductDto'
 import type { CreateCanonicalProduct } from '../../../application/use-cases/CreateCanonicalProduct'
+import type {
+  GetCanonicalProduct,
+  LookupCanonicalProducts,
+  LookupCanonicalProductsResult,
+} from '../../../application/use-cases/CanonicalProductQueries'
 import { Role, type VerifiedIdentity } from '../../../application/ports/TokenVerifierPort'
-import { CREATE_CANONICAL_PRODUCT } from './tokens'
-import { CurrentIdentity, RequiresMfaEvidence, Roles } from './auth/decorators'
-import { CanonicalProductResponse, CreateCanonicalProductRequest } from './canonical-products.dto'
+import {
+  CREATE_CANONICAL_PRODUCT,
+  GET_CANONICAL_PRODUCT,
+  LOOKUP_CANONICAL_PRODUCTS,
+} from './tokens'
+import { CurrentIdentity, Public, RequiresMfaEvidence, Roles } from './auth/decorators'
+import {
+  CanonicalProductResponse,
+  CreateCanonicalProductRequest,
+  LookupCanonicalProductsRequest,
+  LookupCanonicalProductsResponse,
+} from './canonical-products.dto'
 
-/** Entrada HTTP de la creación canónica acordada en ADR-013. */
+/** Entrada HTTP de la creación y la LECTURA canónica de producto (ADR-013). */
 @ApiTags('Catalog Products')
 @ApiBearerAuth('bearerAuth')
 @Controller('v1/catalog/products')
@@ -38,6 +56,10 @@ export class CanonicalProductsController {
   constructor(
     @Inject(CREATE_CANONICAL_PRODUCT)
     private readonly createCanonicalProduct: CreateCanonicalProduct,
+    @Inject(GET_CANONICAL_PRODUCT)
+    private readonly getCanonicalProduct: GetCanonicalProduct,
+    @Inject(LOOKUP_CANONICAL_PRODUCTS)
+    private readonly lookupCanonicalProducts: LookupCanonicalProducts,
   ) {}
 
   @Post()
@@ -78,7 +100,50 @@ export class CanonicalProductsController {
     }
   }
 
+  @Public()
+  @Post('lookup')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    operationId: 'lookupCatalogProductsV1',
+    summary: 'Resuelve varios productos canónicos por referencia en una sola consulta',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Productos resueltos',
+    type: LookupCanonicalProductsResponse,
+  })
+  @ApiResponse({ status: 400, description: 'Lista de referencias inválida' })
+  async lookup(
+    @Body() body: LookupCanonicalProductsRequest,
+  ): Promise<LookupCanonicalProductsResult> {
+    try {
+      return await this.lookupCanonicalProducts.execute(body)
+    } catch (error: unknown) {
+      throw CanonicalProductsController.translate(error)
+    }
+  }
+
+  @Public()
+  @Get(':reference')
+  @ApiOperation({
+    operationId: 'getCatalogProductV1',
+    summary: 'Recupera un producto canónico por productId (UUID) o por su alias sku',
+  })
+  @ApiResponse({ status: 200, description: 'Producto encontrado', type: CanonicalProductResponse })
+  @ApiResponse({ status: 404, description: 'No existe un producto canónico con esa referencia' })
+  async getByReference(@Param('reference') reference: string): Promise<CanonicalProductDto> {
+    try {
+      return await this.getCanonicalProduct.execute(reference)
+    } catch (error: unknown) {
+      throw CanonicalProductsController.translate(error)
+    }
+  }
+
   private static translate(error: unknown): Error {
+    if (error instanceof CanonicalProductNotFoundError) {
+      return new NotFoundException(error.message)
+    }
+
     if (
       error instanceof CanonicalProductAlreadyExistsError ||
       error instanceof CanonicalProductSkuAlreadyExistsError ||

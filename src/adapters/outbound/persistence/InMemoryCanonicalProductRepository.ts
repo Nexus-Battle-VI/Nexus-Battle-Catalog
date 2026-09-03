@@ -4,7 +4,11 @@ import {
   CanonicalProductIdentityAlreadyExistsError,
   CanonicalProductSkuAlreadyExistsError,
 } from '../../../application/errors/ApplicationError'
-import type { CanonicalProductRepositoryPort } from '../../../application/ports/CanonicalProductPorts'
+import type {
+  CanonicalProductLookupQuery,
+  CanonicalProductRepositoryPort,
+} from '../../../application/ports/CanonicalProductPorts'
+import { normalizeProductName } from '../../../domain/entities/CanonicalProduct'
 import type { CanonicalProduct } from '../../../domain/entities/CanonicalProduct'
 import type { ProductId, ProductType } from '../../../domain/value-objects/canonical-product-values'
 
@@ -71,5 +75,38 @@ export class InMemoryCanonicalProductRepository implements CanonicalProductRepos
 
   findTypeById(productId: ProductId): Promise<ProductType | null> {
     return Promise.resolve(this.byId.get(productId.value)?.type ?? null)
+  }
+
+  findByReference(reference: string): Promise<CanonicalProduct | null> {
+    const direct = this.byId.get(reference)
+    if (direct !== undefined) {
+      return Promise.resolve(direct)
+    }
+
+    const idFromSku = this.bySku.get(reference)
+    return Promise.resolve(idFromSku === undefined ? null : (this.byId.get(idFromSku) ?? null))
+  }
+
+  findByReferences(query: CanonicalProductLookupQuery): Promise<readonly CanonicalProduct[]> {
+    const wanted = new Set(query.references)
+    const normalizedQuery =
+      query.nameQuery === undefined ? undefined : normalizeProductName(query.nameQuery)
+
+    const items = [...this.byId.values()]
+      .filter((product) => {
+        if (!wanted.has(product.productId.value) && !wanted.has(product.sku.value)) {
+          return false
+        }
+        if (query.type !== undefined && product.type !== query.type) {
+          return false
+        }
+        if (normalizedQuery !== undefined && !product.normalizedName.includes(normalizedQuery)) {
+          return false
+        }
+        return true
+      })
+      .sort((left, right) => left.name.value.localeCompare(right.name.value))
+
+    return Promise.resolve(items)
   }
 }

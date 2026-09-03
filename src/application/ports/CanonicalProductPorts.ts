@@ -24,6 +24,31 @@ export interface ProductReferenceQueryPort {
   findTypeById(productId: ProductId): Promise<ProductType | null>
 }
 
+/**
+ * Consulta de lectura por referencia sobre el conjunto de productos que el
+ * consumidor ya posee. `references` casa cada valor contra `productId` (UUID) o
+ * contra el alias `sku`; `nameQuery` filtra por substring del nombre normalizado
+ * y `type` por tipo canónico. Ambos filtros son opcionales.
+ */
+export interface CanonicalProductLookupQuery {
+  readonly references: readonly string[]
+  readonly nameQuery?: string
+  readonly type?: ProductType
+}
+
+/**
+ * Puerto de LECTURA canónica para consumidores externos (HU-27).
+ *
+ * Añade lectura al almacén canónico sin exponer la base privada de Catalog y
+ * sin obligar a un N+1: `findByReferences` resuelve muchas referencias en una
+ * sola consulta. La identidad canónica sigue siendo `productId`; `sku` se
+ * acepta solo como alias de compatibilidad de consulta.
+ */
+export interface CanonicalProductReadPort {
+  findByReference(reference: string): Promise<CanonicalProduct | null>
+  findByReferences(query: CanonicalProductLookupQuery): Promise<readonly CanonicalProduct[]>
+}
+
 /** Contexto opaco de transacción, desacoplado del driver subyacente. */
 export interface TransactionContext {
   readonly session?: unknown
@@ -37,7 +62,7 @@ export interface CanonicalProductWritePort {
 
 /** Almacén canónico completo durante la transición aditiva de ADR-013. */
 export interface CanonicalProductRepositoryPort
-  extends CanonicalProductWritePort, ProductReferenceQueryPort {}
+  extends CanonicalProductWritePort, ProductReferenceQueryPort, CanonicalProductReadPort {}
 
 /** Unidad de trabajo para coordinar transacciones atómicas (ADR-015 / EN-027.6). */
 export interface CanonicalProductUnitOfWorkPort {
@@ -105,6 +130,7 @@ export interface ProductOutboxPort {
 
 export const HERO_SUBTYPE_REGISTRY = Symbol('HeroSubtypeRegistryPort')
 export const PRODUCT_REFERENCE_QUERY = Symbol('ProductReferenceQueryPort')
+export const CANONICAL_PRODUCT_READ = Symbol('CanonicalProductReadPort')
 export const CANONICAL_PRODUCT_WRITE = Symbol('CanonicalProductWritePort')
 export const CANONICAL_PRODUCT_REPOSITORY = Symbol('CanonicalProductRepositoryPort')
 export const CANONICAL_PRODUCT_UNIT_OF_WORK = Symbol('CanonicalProductUnitOfWorkPort')
