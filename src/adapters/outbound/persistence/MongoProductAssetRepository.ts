@@ -109,14 +109,16 @@ export class MongoProductAssetRepository implements ProductAssetRepositoryPort {
       contentLength: snap.contentLength,
       checksumSha256: snap.checksumSha256,
       stagingKey: snap.stagingKey,
-      targetKey: snap.targetKey,
-      width: snap.width,
-      height: snap.height,
+      // BSON convierte undefined en null por defecto. El esquema exige que
+      // los metadatos todavía desconocidos estén ausentes, no sean null.
+      ...(snap.targetKey === undefined ? {} : { targetKey: snap.targetKey }),
+      ...(snap.width === undefined ? {} : { width: snap.width }),
+      ...(snap.height === undefined ? {} : { height: snap.height }),
       imageUrl: snap.imageUrl,
       createdAt: snap.createdAt,
       expiresAt: snap.expiresAt,
-      finalizedAt: snap.finalizedAt,
-      productId: snap.productId,
+      ...(snap.finalizedAt === undefined ? {} : { finalizedAt: snap.finalizedAt }),
+      ...(snap.productId === undefined ? {} : { productId: snap.productId }),
     }
   }
 
