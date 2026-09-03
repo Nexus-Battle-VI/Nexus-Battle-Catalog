@@ -217,6 +217,15 @@ export const loadConfig = (env: RawEnv): AppConfig => {
   const assetsBaseUrl = readString(env, 'API_BASE_URL', '').replace(/\/+$/, '')
   const assetsEnforceStrict = readBoolean(env, 'ASSETS_ENFORCE_STRICT', false)
 
+  // La referencia que persiste el producto es una URL canónica de Catalog,
+  // nunca la URL firmada de S3. Sin origen público no se puede construir una
+  // referencia estable que un consumidor externo pueda resolver.
+  if (assetsStorageDriver === AssetsStorageDriver.S3 && assetsBaseUrl === '') {
+    throw new ConfigurationError(
+      'API_BASE_URL es obligatorio cuando ASSETS_STORAGE_DRIVER es "s3".',
+    )
+  }
+
   return {
     nodeEnv,
     serviceName: readString(env, 'SERVICE_NAME', 'nexus-battle-catalog'),

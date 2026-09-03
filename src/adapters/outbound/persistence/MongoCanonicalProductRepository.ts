@@ -1,4 +1,11 @@
-import { Long, MongoServerError, type ClientSession, type Collection, type Db } from 'mongodb'
+import {
+  Long,
+  MongoServerError,
+  type ClientSession,
+  type Collection,
+  type Db,
+  type Filter,
+} from 'mongodb'
 
 import {
   CanonicalProductAlreadyExistsError,
@@ -8,11 +15,18 @@ import {
 } from '../../../application/errors/ApplicationError'
 import type {
   AvailabilityDecrement,
+  CanonicalProductLookupQuery,
   CanonicalProductRepositoryPort,
   TransactionContext,
 } from '../../../application/ports/CanonicalProductPorts'
+import { normalizeProductName } from '../../../domain/entities/CanonicalProduct'
 import type { CanonicalProduct } from '../../../domain/entities/CanonicalProduct'
 import type { ProductId, ProductType } from '../../../domain/value-objects/canonical-product-values'
+import {
+  type CatalogStorefrontPort,
+  type CatalogStorefrontQuery,
+} from '../../../application/ports/CatalogStorefrontPort'
+import { storefrontMongoQuery } from './storefront-search-projection'
 import {
   toCanonicalDocument,
   toCanonicalProduct,
@@ -21,7 +35,9 @@ import {
 } from './canonical-mapping'
 
 /** Escritura canónica aditiva sobre la misma colección que conserva el legado. */
-export class MongoCanonicalProductRepository implements CanonicalProductRepositoryPort {
+export class MongoCanonicalProductRepository
+  implements CanonicalProductRepositoryPort, CatalogStorefrontPort
+{
   private readonly products: Collection<CanonicalProductDocument>
 
   constructor(db: Db) {
@@ -91,6 +107,79 @@ export class MongoCanonicalProductRepository implements CanonicalProductReposito
   }
 
   /**
+   * Resuelve un producto canónico por `productId` (`_id`) o por su alias `sku`.
+   * `type: { $exists: true }` deja fuera los documentos heredados que comparten
+   * la colección. La identidad canónica prevalece sobre el alias, igual que
+   * en memoria, incluso si otro producto usa un SKU con forma de UUID.
+   * Ambas búsquedas exactas usan los índices existentes de `_id` y `sku`.
+   */
+  async findByReference(reference: string): Promise<CanonicalProduct | null> {
+    const document =
+      (await this.products.findOne({ _id: reference, type: { $exists: true } })) ??
+      (await this.products.findOne({ sku: reference, type: { $exists: true } }))
+
+    return document === null ? null : toCanonicalProduct(document)
+  }
+
+  async listStorefront(
+    query: CatalogStorefrontQuery,
+  ): Promise<{ items: readonly CanonicalProduct[]; total: number }> {
+    const { pipeline, hint } = storefrontMongoQuery(query)
+    const [result] = await this.products
+      .aggregate<{
+        items: CanonicalProductDocument[]
+        count: { total: number | Long }[]
+      }>(pipeline, { hint, allowDiskUse: true })
+      .toArray()
+    const total = result?.count[0]?.total ?? 0
+    return {
+      items: (result?.items ?? []).map(toCanonicalProduct),
+      total: typeof total === 'number' ? total : total.toNumber(),
+    }
+  }
+
+  /**
+   * Resuelve muchas referencias en UNA consulta.
+   *
+   * La consulta a Mongo es un lookup PURO por referencia (`_id` o `sku` en la
+   * lista): es elegible para los índices `_id` y `uniq_products_sku` y acota el
+   * universo a lo que el consumidor posee (Inventory tiene como máximo 200
+   * ranuras). El filtrado por nombre y por tipo se hace DESPUÉS, en memoria,
+   * sobre ese conjunto ya pequeño: no es un índice de texto y no se describe
+   * como tal. Así la búsqueda nunca puede devolver un producto fuera del
+   * conjunto pedido y no se añade infraestructura de búsqueda para 200
+   * referencias.
+   */
+  async findByReferences(query: CanonicalProductLookupQuery): Promise<readonly CanonicalProduct[]> {
+    const references = [...query.references]
+
+    const filter: Filter<CanonicalProductDocument> = {
+      type: { $exists: true },
+      $or: [{ _id: { $in: references } }, { sku: { $in: references } }],
+    }
+
+    const documents = await this.products.find(filter).toArray()
+
+    // Substring literal sobre el nombre normalizado; `String.includes` no
+    // interpreta metacaracteres, así que no hace falta escapar nada.
+    const wantedName =
+      query.nameQuery === undefined ? undefined : normalizeProductName(query.nameQuery)
+
+    return documents
+      .filter((document) => {
+        if (query.type !== undefined && document.type !== query.type) {
+          return false
+        }
+        if (wantedName !== undefined && !document.normalizedName.includes(wantedName)) {
+          return false
+        }
+        return true
+      })
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((document) => toCanonicalProduct(document))
+  }
+
+  /**
    * Resta UNA unidad en una sola operacion condicionada (HU-34, CA-01).
    *
    * LA CONDICION VIAJA DENTRO DE LA ESCRITURA. `availableUnits: { $gt: 0 }`
@@ -121,6 +210,7 @@ export class MongoCanonicalProductRepository implements CanonicalProductReposito
     const actualizado = await this.products.findOneAndUpdate(
       {
         _id: productId.value,
+        lifecycleStatus: 'ACTIVE',
         printRunMode: { $ne: 'INFINITE' },
         availableUnits: { $gt: Long.fromNumber(0) },
       },
@@ -149,7 +239,9 @@ export class MongoCanonicalProductRepository implements CanonicalProductReposito
       return null
     }
 
-    return documento.printRunMode === 'INFINITE' ? { availableUnits: null, depleted: false } : null
+    return documento.lifecycleStatus === 'ACTIVE' && documento.printRunMode === 'INFINITE'
+      ? { availableUnits: null, depleted: false }
+      : null
   }
 
   private translateDuplicate(error: unknown, product: CanonicalProduct): never {

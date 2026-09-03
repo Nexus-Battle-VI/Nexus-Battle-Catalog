@@ -1,5 +1,8 @@
 # Nexus-Battle-Catalog
 
+Contrato de vitrina canónica y reserva de stock para compra simulada:
+[integración ecommerce](docs/ecommerce-contract.md).
+
 Servicio de catálogo de Nexus Battles VI. Implementa el bounded context **Catalog**: qué productos existen, cómo se llaman, a qué categoría pertenecen, cuánto cuestan y si están a la venta.
 
 Este repositorio contiene código y Pull Requests. No contiene Issues ni Product Backlog: la fuente única de verdad es [Nexus-Battle-Management](https://github.com/Nexus-Battle-VI/Nexus-Battle-Management).
@@ -177,20 +180,41 @@ Con la configuración por defecto el servicio arranca con el repositorio en memo
 
 Documentación interactiva de la API en `http://localhost:3003/api/docs`.
 
+## Recursos visuales de Producto
+
+Catalog implementa el contrato de recursos visuales de Producto de ADR-016. El
+binario no se almacena en MongoDB ni se acepta desde una URL externa cuando
+`ASSETS_ENFORCE_STRICT=true`: Catalog guarda una referencia canónica estable y
+S3 privado conserva el objeto.
+
+El administrador solicita una intención de carga, Web carga directamente a S3
+con el formulario firmado y luego finaliza la intención. La finalización valida
+MIME, tamaño (máximo 5 MiB), checksum SHA-256, magic bytes, dimensiones y
+ausencia de animación antes de promover el objeto a una clave inmutable.
+
+Para desarrollo, `ASSETS_STORAGE_DRIVER=memory` evita requerir AWS. Para S3 se
+requieren `PRODUCT_ASSETS_BUCKET_NAME`, `AWS_REGION` y `API_BASE_URL`; esta
+última es el origen público de Catalog y permite generar la URL canónica del
+asset. La infraestructura del bucket, IAM y lifecycle pertenece a
+`Nexus-Battle-Infrastructure`.
+
 ## API
 
-| Método | Ruta                             | Descripción                                                    |
-| ------ | -------------------------------- | -------------------------------------------------------------- |
-| `POST` | `/api/products`                  | Crea un producto en borrador                                   |
-| `GET`  | `/api/products`                  | Lista los productos publicados. Admite `?category=`            |
-| `GET`  | `/api/products/:sku`             | Recupera un producto publicado                                 |
-| `POST` | `/api/products/:sku/publication` | Publica el producto                                            |
-| `POST` | `/api/products/:sku/archival`    | Archiva el producto                                            |
-| `POST` | `/api/products/:sku/price`       | Cambia el precio                                               |
-| `POST` | `/api/v1/catalog/products`       | Crea un producto canónico de ADR-013                           |
-| `GET`  | `/api/health/live`               | El proceso responde. No consulta dependencias                  |
-| `GET`  | `/api/health/ready`              | Evalúa las dependencias reales. Responde `503` si alguna falla |
-| `GET`  | `/api/version`                   | Servicio, versión y entorno                                    |
+| Método | Ruta                                                 | Descripción                                                    |
+| ------ | ---------------------------------------------------- | -------------------------------------------------------------- |
+| `POST` | `/api/products`                                      | Crea un producto en borrador                                   |
+| `GET`  | `/api/products`                                      | Lista los productos publicados. Admite `?category=`            |
+| `GET`  | `/api/products/:sku`                                 | Recupera un producto publicado                                 |
+| `POST` | `/api/products/:sku/publication`                     | Publica el producto                                            |
+| `POST` | `/api/products/:sku/archival`                        | Archiva el producto                                            |
+| `POST` | `/api/products/:sku/price`                           | Cambia el precio                                               |
+| `POST` | `/api/v1/catalog/products`                           | Crea un producto canónico de ADR-013                           |
+| `POST` | `/api/v1/admin/product-assets/uploads`               | Crea una intención de carga directa de imagen                  |
+| `POST` | `/api/v1/admin/product-assets/:assetId/finalization` | Valida y promueve el asset a `READY`                           |
+| `GET`  | `/api/v1/catalog/product-assets/:assetId/content`    | Redirige (`307`) a una URL firmada temporal de S3              |
+| `GET`  | `/api/health/live`                                   | El proceso responde. No consulta dependencias                  |
+| `GET`  | `/api/health/ready`                                  | Evalúa las dependencias reales. Responde `503` si alguna falla |
+| `GET`  | `/api/version`                                       | Servicio, versión y entorno                                    |
 
 Las consultas públicas (`GET`) devuelven `404` para un producto en borrador o archivado: no es un error de implementación, es la regla de visibilidad del dominio.
 
@@ -201,6 +225,11 @@ puede enviarse por compatibilidad o se genera automáticamente. La ruta exige
 un rol administrativo y evidencia TOTP de una aplicacion autenticadora ligada
 al `jti` del access token; no acepta esa evidencia desde el cuerpo o cabeceras
 de la petición.
+
+Las dos operaciones administrativas de assets exigen JWT, rol administrativo
+y evidencia TOTP. La URL devuelta al finalizar debe utilizarse como `imageUrl`
+del producto. Las URLs firmadas de S3 no se persisten ni se exponen como la
+referencia del producto.
 
 ## Scripts
 

@@ -389,6 +389,23 @@ describe('loadConfig', () => {
     ).toBe('mongo')
   })
 
+  it('exige una URL canónica de Catalog cuando el almacenamiento de assets usa S3', () => {
+    expect(() =>
+      loadConfig({
+        ASSETS_STORAGE_DRIVER: 's3',
+        PRODUCT_ASSETS_BUCKET_NAME: 'nexus-battles-product-assets',
+      }),
+    ).toThrow(/API_BASE_URL es obligatorio/)
+
+    expect(
+      loadConfig({
+        ASSETS_STORAGE_DRIVER: 's3',
+        PRODUCT_ASSETS_BUCKET_NAME: 'nexus-battles-product-assets',
+        API_BASE_URL: 'https://catalog.example.test/',
+      }).assetsBaseUrl,
+    ).toBe('https://catalog.example.test')
+  })
+
   it('deshabilita la documentacion interactiva en produccion por defecto', () => {
     // Produccion exige autenticacion configurada: `loadConfig` se niega a
     // arrancar sin ella. Se aporta aqui porque el objeto de esta prueba es la

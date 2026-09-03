@@ -17,6 +17,16 @@ import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-
 import { AdjustProductInventory } from '../../application/use-cases/AdjustProductInventory'
 import { GetCanonicalProduct } from '../../application/use-cases/GetCanonicalProduct'
 import { AcquireProductUnit } from '../../application/use-cases/AcquireProductUnit'
+import { ListCatalogStorefront } from '../../application/use-cases/ListCatalogStorefront'
+import type { CatalogStorefrontPort } from '../../application/ports/CatalogStorefrontPort'
+import { StockReservations } from '../../application/use-cases/StockReservations'
+import {
+  STOCK_RESERVATIONS,
+  type StockReservationPort,
+} from '../../application/ports/StockReservationPort'
+import { InMemoryStockReservationRepository } from '../../adapters/outbound/persistence/InMemoryStockReservationRepository'
+import { MongoStockReservationRepository } from '../../adapters/outbound/persistence/MongoStockReservationRepository'
+import { InternalStockReservationsController } from '../../adapters/inbound/http/internal-stock-reservations.controller'
 import { MongoProductAcquisitionRepository } from '../../adapters/outbound/persistence/MongoProductAcquisitionRepository'
 import { InMemoryProductAcquisitionRepository } from '../../adapters/outbound/persistence/InMemoryProductAcquisitionRepository'
 import { AdminProductAssetsController } from '../../adapters/inbound/http/admin-product-assets.controller'
@@ -30,6 +40,8 @@ import {
   LIST_PRODUCTS,
   PUBLISH_PRODUCT,
   CREATE_CANONICAL_PRODUCT,
+  GET_CANONICAL_PRODUCT_BY_REFERENCE,
+  LOOKUP_CANONICAL_PRODUCTS,
   ADJUST_PRODUCT_INVENTORY,
   GET_CANONICAL_PRODUCT,
   ACQUIRE_PRODUCT_UNIT,
@@ -51,6 +63,10 @@ import {
   PublishProduct,
 } from '../../application/use-cases/ProductUseCases'
 import { CreateCanonicalProduct } from '../../application/use-cases/CreateCanonicalProduct'
+import {
+  GetCanonicalProductByReference,
+  LookupCanonicalProducts,
+} from '../../application/use-cases/CanonicalProductQueries'
 import { CreateProductAssetUploadIntent } from '../../application/use-cases/CreateProductAssetUploadIntent'
 import { FinalizeProductAsset } from '../../application/use-cases/FinalizeProductAsset'
 import { GetProductAssetContent } from '../../application/use-cases/GetProductAssetContent'
@@ -98,6 +114,7 @@ import type { TokenVerifierPort } from '../../application/ports/TokenVerifierPor
 import { CognitoTokenVerifier } from '../../adapters/outbound/identity/CognitoTokenVerifier'
 import { ID_GENERATOR } from '../../application/ports/IdGeneratorPort'
 import {
+  CANONICAL_PRODUCT_READ,
   CANONICAL_PRODUCT_REPOSITORY,
   CANONICAL_PRODUCT_UNIT_OF_WORK,
   CANONICAL_PRODUCT_WRITE,
@@ -106,6 +123,7 @@ import {
   PRODUCT_OUTBOX_PORT,
   PRODUCT_ACQUISITION_PORT,
   PRODUCT_REFERENCE_QUERY,
+  type CanonicalProductReadPort,
   type CanonicalProductRepositoryPort,
   type CanonicalProductUnitOfWorkPort,
   type ProductAcquisitionPort,
@@ -134,11 +152,39 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
     CanonicalProductsController,
     AdminProductsController,
     InternalProductAcquisitionsController,
+    InternalStockReservationsController,
     AdminProductAssetsController,
     CatalogProductAssetsController,
     HealthController,
   ],
   providers: [
+    {
+      provide: STOCK_RESERVATIONS,
+      useFactory: (
+        database: Db | null,
+        client: MongoClient | null,
+        products: CanonicalProductRepositoryPort,
+      ): StockReservationPort => {
+        if (database !== null && client !== null)
+          return new MongoStockReservationRepository(database, client)
+        if (!(products instanceof InMemoryCanonicalProductRepository))
+          throw new Error('El almacén de reservas necesita el mismo catálogo en memoria.')
+        return new InMemoryStockReservationRepository(products)
+      },
+      inject: [CATALOG_DATABASE, CATALOG_MONGO_CLIENT, CANONICAL_PRODUCT_REPOSITORY],
+    },
+    {
+      provide: StockReservations,
+      useFactory: (reservations: StockReservationPort, clock: ClockPort): StockReservations =>
+        new StockReservations(reservations, clock),
+      inject: [STOCK_RESERVATIONS, CLOCK],
+    },
+    {
+      provide: ListCatalogStorefront,
+      useFactory: (products: CatalogStorefrontPort): ListCatalogStorefront =>
+        new ListCatalogStorefront(products),
+      inject: [CANONICAL_PRODUCT_REPOSITORY],
+    },
     {
       provide: APP_CONFIG,
       useFactory: (): AppConfig => loadConfig(process.env),
@@ -248,6 +294,7 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
     },
     { provide: CANONICAL_PRODUCT_WRITE, useExisting: CANONICAL_PRODUCT_REPOSITORY },
     { provide: PRODUCT_REFERENCE_QUERY, useExisting: CANONICAL_PRODUCT_REPOSITORY },
+    { provide: CANONICAL_PRODUCT_READ, useExisting: CANONICAL_PRODUCT_REPOSITORY },
     { provide: HERO_SUBTYPE_REGISTRY, useFactory: () => new HeroSubtypeRegistryV1() },
     { provide: ID_GENERATOR, useFactory: (): IdGeneratorPort => new UuidGenerator() },
     {
@@ -480,6 +527,18 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         PRODUCT_ASSET_REPOSITORY_PORT,
         APP_CONFIG,
       ],
+    },
+    {
+      provide: GET_CANONICAL_PRODUCT_BY_REFERENCE,
+      useFactory: (products: CanonicalProductReadPort): GetCanonicalProductByReference =>
+        new GetCanonicalProductByReference(products),
+      inject: [CANONICAL_PRODUCT_READ],
+    },
+    {
+      provide: LOOKUP_CANONICAL_PRODUCTS,
+      useFactory: (products: CanonicalProductReadPort): LookupCanonicalProducts =>
+        new LookupCanonicalProducts(products),
+      inject: [CANONICAL_PRODUCT_READ],
     },
     {
       provide: PRODUCT_ASSET_REPOSITORY_PORT,
