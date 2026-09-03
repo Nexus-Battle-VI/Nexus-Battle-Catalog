@@ -10,6 +10,7 @@ import type { Role, VerifiedIdentity } from '../../../../application/ports/Token
 export const IS_PUBLIC = 'auth:public'
 export const REQUIRED_ROLES = 'auth:roles'
 export const REQUIRES_MFA_EVIDENCE = 'auth:mfa-evidence'
+export const IS_INTERNAL = 'auth:internal'
 
 /**
  * Marca una ruta como accesible sin testimonio.
@@ -68,3 +69,17 @@ export const currentIdentityOf = (context: ExecutionContext): VerifiedIdentity =
 export const CurrentIdentity = createParamDecorator(
   (_data: unknown, context: ExecutionContext): VerifiedIdentity => currentIdentityOf(context),
 )
+
+/**
+ * Marca una ruta del contrato interno entre servicios.
+ *
+ * No la llama una persona sino otro servicio, y lo demuestra firmando la
+ * peticion con el secreto compartido. Implica `@Public()` frente al guard de
+ * testimonios -no hay usuario que autenticar- pero NO queda abierta: el
+ * `InternalServiceGuard` exige la firma.
+ *
+ * El proxy no publica `/api/internal*`, asi que ademas no es alcanzable desde
+ * internet. Esa es una segunda linea, no la primera: la firma protege aunque
+ * alguien anada la ruta al proxy sin darse cuenta.
+ */
+export const InternalOnly = (): MethodDecorator & ClassDecorator => SetMetadata(IS_INTERNAL, true)

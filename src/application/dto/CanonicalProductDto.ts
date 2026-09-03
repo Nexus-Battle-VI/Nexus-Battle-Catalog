@@ -16,6 +16,8 @@ export interface CanonicalProductDto {
   readonly attributes: ProductAttributes
   readonly printRun: number
   readonly printRunMode: PrintRunMode
+  /** Unidades que aun pueden emitirse. `null` en tiraje infinito (HU-34). */
+  readonly availableUnits: number | null
   readonly lifecycleStatus: LifecycleStatus
   readonly creditsPrice: number
   readonly premium: boolean
@@ -35,6 +37,7 @@ export const toCanonicalProductDto = (snapshot: CanonicalProductSnapshot): Canon
   attributes: snapshot.attributes,
   printRun: snapshot.printRun,
   printRunMode: snapshot.printRunMode,
+  availableUnits: snapshot.availableUnits,
   lifecycleStatus: snapshot.lifecycleStatus,
   creditsPrice: snapshot.creditsPrice,
   premium: snapshot.premium,
