@@ -122,6 +122,15 @@ export class CanonicalProductResponse {
   @ApiProperty({ enum: ['UNIQUE', 'LIMITED', 'INFINITE'], readOnly: true })
   printRunMode!: string
 
+  @ApiProperty({
+    type: 'number',
+    nullable: true,
+    readOnly: true,
+    description:
+      'Unidades que aun pueden emitirse. `null` en tiraje infinito, donde no se lleva contador.',
+  })
+  availableUnits!: number | null
+
   @ApiProperty({ enum: ['ACTIVE', 'SUSPENDED'], readOnly: true })
   lifecycleStatus!: string
 

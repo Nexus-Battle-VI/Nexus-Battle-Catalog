@@ -11,6 +11,13 @@ import {
   type MfaEvidenceVerifierPort,
 } from '../../application/ports/MfaEvidenceVerifierPort'
 import { CanonicalProductsController } from '../../adapters/inbound/http/canonical-products.controller'
+import { AdminProductsController } from '../../adapters/inbound/http/admin-products.controller'
+import { InternalProductAcquisitionsController } from '../../adapters/inbound/http/internal-product-acquisitions.controller'
+import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
+import { AdjustProductInventory } from '../../application/use-cases/AdjustProductInventory'
+import { AcquireProductUnit } from '../../application/use-cases/AcquireProductUnit'
+import { MongoProductAcquisitionRepository } from '../../adapters/outbound/persistence/MongoProductAcquisitionRepository'
+import { InMemoryProductAcquisitionRepository } from '../../adapters/outbound/persistence/InMemoryProductAcquisitionRepository'
 import { AdminProductAssetsController } from '../../adapters/inbound/http/admin-product-assets.controller'
 import { CatalogProductAssetsController } from '../../adapters/inbound/http/catalog-product-assets.controller'
 import { HealthController } from '../../adapters/inbound/http/health.controller'
@@ -22,6 +29,8 @@ import {
   LIST_PRODUCTS,
   PUBLISH_PRODUCT,
   CREATE_CANONICAL_PRODUCT,
+  ADJUST_PRODUCT_INVENTORY,
+  ACQUIRE_PRODUCT_UNIT,
   CREATE_PRODUCT_ASSET_UPLOAD_INTENT,
   FINALIZE_PRODUCT_ASSET,
   GET_PRODUCT_ASSET_CONTENT,
@@ -93,9 +102,11 @@ import {
   HERO_SUBTYPE_REGISTRY,
   PRODUCT_AUDIT_PORT,
   PRODUCT_OUTBOX_PORT,
+  PRODUCT_ACQUISITION_PORT,
   PRODUCT_REFERENCE_QUERY,
   type CanonicalProductRepositoryPort,
   type CanonicalProductUnitOfWorkPort,
+  type ProductAcquisitionPort,
   type ProductAuditPort,
   type ProductOutboxPort,
 } from '../../application/ports/CanonicalProductPorts'
@@ -119,6 +130,8 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
   controllers: [
     ProductsController,
     CanonicalProductsController,
+    AdminProductsController,
+    InternalProductAcquisitionsController,
     AdminProductAssetsController,
     CatalogProductAssetsController,
     HealthController,
@@ -262,6 +275,31 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
     // orden importa: JwtAuthGuard deja la identidad verificada en la peticion y
     // RolesGuard la lee. NestJS los ejecuta en el orden de declaracion.
     {
+      // El contrato interno va PRIMERO y se registra SIEMPRE, tambien con
+      // `AUTH_MODE=disabled`.
+      //
+      // Siempre, porque su proteccion no depende de que haya proveedor de
+      // identidad: quien llama no es una persona, es otro servicio con un
+      // secreto compartido. Atarlo a `AUTH_MODE` dejaria el endpoint interno
+      // abierto en cualquier entorno sin proveedor.
+      //
+      // Primero, porque las rutas internas no llevan testimonio: si el guard de
+      // testimonios actuara antes, la peticion firmada seria rechazada por no
+      // traer algo que no le corresponde traer.
+      provide: APP_GUARD,
+      useFactory: (config: AppConfig, reflector: Reflector, logger: Logger): CanActivate =>
+        new InternalServiceGuard({
+          reflector,
+          secret: config.internalServiceAuthSecret,
+          // Lista explicita: hoy solo Commerce adquiere unidades. Subasta se
+          // anade cuando exista, y anadirla obliga a decidirlo aqui.
+          allowedServices: ['commerce'],
+          clock: new SystemClock(),
+          logger,
+        }),
+      inject: [APP_CONFIG, Reflector, LOGGER],
+    },
+    {
       provide: APP_GUARD,
       useFactory: (
         config: AppConfig,
@@ -344,6 +382,57 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
       useFactory: (products: ProductRepositoryPort, clock: ClockPort): CreateProduct =>
         new CreateProduct({ products, clock }),
       inject: [PRODUCT_REPOSITORY, CLOCK],
+    },
+    {
+      provide: PRODUCT_ACQUISITION_PORT,
+      useFactory: (config: AppConfig, database: Db | null): ProductAcquisitionPort => {
+        if (config.persistenceDriver !== PersistenceDriver.Mongo) {
+          return new InMemoryProductAcquisitionRepository()
+        }
+        if (database === null) throw new Error('MongoDB no se inicializo.')
+        return new MongoProductAcquisitionRepository(database)
+      },
+      inject: [APP_CONFIG, CATALOG_DATABASE],
+    },
+    {
+      provide: ADJUST_PRODUCT_INVENTORY,
+      useFactory: (
+        products: CanonicalProductRepositoryPort,
+        clock: ClockPort,
+        idGenerator: IdGeneratorPort,
+        unitOfWork: CanonicalProductUnitOfWorkPort,
+        audit: ProductAuditPort,
+        outbox: ProductOutboxPort,
+      ): AdjustProductInventory =>
+        new AdjustProductInventory({ products, clock, idGenerator, unitOfWork, audit, outbox }),
+      inject: [
+        CANONICAL_PRODUCT_WRITE,
+        CLOCK,
+        ID_GENERATOR,
+        CANONICAL_PRODUCT_UNIT_OF_WORK,
+        PRODUCT_AUDIT_PORT,
+        PRODUCT_OUTBOX_PORT,
+      ],
+    },
+    {
+      provide: ACQUIRE_PRODUCT_UNIT,
+      useFactory: (
+        products: CanonicalProductRepositoryPort,
+        acquisitions: ProductAcquisitionPort,
+        clock: ClockPort,
+        idGenerator: IdGeneratorPort,
+        unitOfWork: CanonicalProductUnitOfWorkPort,
+        outbox: ProductOutboxPort,
+      ): AcquireProductUnit =>
+        new AcquireProductUnit({ products, acquisitions, clock, idGenerator, unitOfWork, outbox }),
+      inject: [
+        CANONICAL_PRODUCT_WRITE,
+        PRODUCT_ACQUISITION_PORT,
+        CLOCK,
+        ID_GENERATOR,
+        CANONICAL_PRODUCT_UNIT_OF_WORK,
+        PRODUCT_OUTBOX_PORT,
+      ],
     },
     {
       provide: CREATE_CANONICAL_PRODUCT,
