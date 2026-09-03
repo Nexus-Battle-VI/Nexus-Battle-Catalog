@@ -1,6 +1,6 @@
 import { Module, type CanActivate } from '@nestjs/common'
 import { APP_GUARD, Reflector } from '@nestjs/core'
-import type { Db } from 'mongodb'
+import type { Db, MongoClient } from 'mongodb'
 
 import { ProductsController } from '../../adapters/inbound/http/products.controller'
 import { MfaEvidenceGuard } from '../../adapters/inbound/http/auth/mfa-evidence.guard'
@@ -39,8 +39,14 @@ import type { ClockPort } from '../../application/ports/ClockPort'
 
 import { InMemoryProductRepository } from '../../adapters/outbound/persistence/InMemoryProductRepository'
 import { InMemoryCanonicalProductRepository } from '../../adapters/outbound/persistence/InMemoryCanonicalProductRepository'
+import { InMemoryProductAuditRepository } from '../../adapters/outbound/persistence/InMemoryProductAuditRepository'
+import { InMemoryProductOutboxRepository } from '../../adapters/outbound/persistence/InMemoryProductOutboxRepository'
+import { InMemoryCanonicalProductUnitOfWork } from '../../adapters/outbound/persistence/InMemoryCanonicalProductUnitOfWork'
 import { MongoProductRepository } from '../../adapters/outbound/persistence/MongoProductRepository'
 import { MongoCanonicalProductRepository } from '../../adapters/outbound/persistence/MongoCanonicalProductRepository'
+import { MongoProductAuditRepository } from '../../adapters/outbound/persistence/MongoProductAuditRepository'
+import { MongoProductOutboxRepository } from '../../adapters/outbound/persistence/MongoProductOutboxRepository'
+import { MongoCanonicalProductUnitOfWork } from '../../adapters/outbound/persistence/MongoCanonicalProductUnitOfWork'
 import { SystemClock } from '../../adapters/outbound/system/SystemClock'
 import { UuidGenerator } from '../../adapters/outbound/system/UuidGenerator'
 import { HeroSubtypeRegistryV1 } from '../../adapters/outbound/registry/HeroSubtypeRegistryV1'
@@ -58,16 +64,23 @@ import { CognitoTokenVerifier } from '../../adapters/outbound/identity/CognitoTo
 import { ID_GENERATOR } from '../../application/ports/IdGeneratorPort'
 import {
   CANONICAL_PRODUCT_REPOSITORY,
+  CANONICAL_PRODUCT_UNIT_OF_WORK,
   CANONICAL_PRODUCT_WRITE,
   HERO_SUBTYPE_REGISTRY,
+  PRODUCT_AUDIT_PORT,
+  PRODUCT_OUTBOX_PORT,
   PRODUCT_REFERENCE_QUERY,
   type CanonicalProductRepositoryPort,
+  type CanonicalProductUnitOfWorkPort,
+  type ProductAuditPort,
+  type ProductOutboxPort,
 } from '../../application/ports/CanonicalProductPorts'
 import type { IdGeneratorPort } from '../../application/ports/IdGeneratorPort'
 import type { ReadinessCheck, VersionReport } from '../health/health'
 
 export const APP_CONFIG = Symbol('AppConfig')
 export const LOGGER = Symbol('Logger')
+export const CATALOG_MONGO_CLIENT = Symbol('CatalogMongoClient')
 const CATALOG_DATABASE = Symbol('CatalogDatabase')
 
 /**
@@ -96,8 +109,8 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
       inject: [APP_CONFIG],
     },
     {
-      provide: CATALOG_DATABASE,
-      useFactory: async (config: AppConfig, logger: Logger): Promise<Db | null> => {
+      provide: CATALOG_MONGO_CLIENT,
+      useFactory: async (config: AppConfig, logger: Logger): Promise<MongoClient | null> => {
         if (config.persistenceDriver !== PersistenceDriver.Mongo) return null
 
         if (config.databaseUrl === null) {
@@ -109,9 +122,53 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         await client.connect()
         logger.info('mongo_persistence', { detail: 'Adaptador MongoDB activo.' })
 
-        return databaseOf(client, options)
+        return client
       },
       inject: [APP_CONFIG, LOGGER],
+    },
+    {
+      provide: CATALOG_DATABASE,
+      useFactory: (client: MongoClient | null, config: AppConfig): Db | null => {
+        if (client === null) return null
+        return databaseOf(client, { uri: config.databaseUrl ?? '' })
+      },
+      inject: [CATALOG_MONGO_CLIENT, APP_CONFIG],
+    },
+    {
+      provide: CANONICAL_PRODUCT_UNIT_OF_WORK,
+      useFactory: (
+        config: AppConfig,
+        client: MongoClient | null,
+      ): CanonicalProductUnitOfWorkPort => {
+        if (config.persistenceDriver !== PersistenceDriver.Mongo) {
+          return new InMemoryCanonicalProductUnitOfWork()
+        }
+        if (client === null) throw new Error('MongoClient no se inicializo.')
+        return new MongoCanonicalProductUnitOfWork(client)
+      },
+      inject: [APP_CONFIG, CATALOG_MONGO_CLIENT],
+    },
+    {
+      provide: PRODUCT_AUDIT_PORT,
+      useFactory: (config: AppConfig, database: Db | null): ProductAuditPort => {
+        if (config.persistenceDriver !== PersistenceDriver.Mongo) {
+          return new InMemoryProductAuditRepository()
+        }
+        if (database === null) throw new Error('MongoDB no se inicializo.')
+        return new MongoProductAuditRepository(database)
+      },
+      inject: [APP_CONFIG, CATALOG_DATABASE],
+    },
+    {
+      provide: PRODUCT_OUTBOX_PORT,
+      useFactory: (config: AppConfig, database: Db | null): ProductOutboxPort => {
+        if (config.persistenceDriver !== PersistenceDriver.Mongo) {
+          return new InMemoryProductOutboxRepository()
+        }
+        if (database === null) throw new Error('MongoDB no se inicializo.')
+        return new MongoProductOutboxRepository(database)
+      },
+      inject: [APP_CONFIG, CATALOG_DATABASE],
     },
     {
       provide: PRODUCT_REPOSITORY,
@@ -266,6 +323,9 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         productReferences: CanonicalProductRepositoryPort,
         idGenerator: IdGeneratorPort,
         clock: ClockPort,
+        unitOfWork: CanonicalProductUnitOfWorkPort,
+        audit: ProductAuditPort,
+        outbox: ProductOutboxPort,
       ): CreateCanonicalProduct =>
         new CreateCanonicalProduct({
           products,
@@ -273,6 +333,9 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
           productReferences,
           idGenerator,
           clock,
+          unitOfWork,
+          audit,
+          outbox,
         }),
       inject: [
         CANONICAL_PRODUCT_WRITE,
@@ -280,6 +343,9 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         PRODUCT_REFERENCE_QUERY,
         ID_GENERATOR,
         CLOCK,
+        CANONICAL_PRODUCT_UNIT_OF_WORK,
+        PRODUCT_AUDIT_PORT,
+        PRODUCT_OUTBOX_PORT,
       ],
     },
     {

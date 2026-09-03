@@ -14,17 +14,19 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagg
 import { DomainError } from '../../../domain/errors/DomainError'
 import {
   CanonicalProductAlreadyExistsError,
+  CanonicalProductConcurrencyConflictError,
   CanonicalProductIdentityAlreadyExistsError,
   CanonicalProductSkuAlreadyExistsError,
   HeroSubtypeBranchMismatchError,
   InvalidAbilityReferenceError,
   InvalidHeroSubtypeError,
+  OutboxPayloadTooLargeError,
 } from '../../../application/errors/ApplicationError'
 import type { CanonicalProductDto } from '../../../application/dto/CanonicalProductDto'
 import type { CreateCanonicalProduct } from '../../../application/use-cases/CreateCanonicalProduct'
-import { Role } from '../../../application/ports/TokenVerifierPort'
+import { Role, type VerifiedIdentity } from '../../../application/ports/TokenVerifierPort'
 import { CREATE_CANONICAL_PRODUCT } from './tokens'
-import { RequiresMfaEvidence, Roles } from './auth/decorators'
+import { CurrentIdentity, RequiresMfaEvidence, Roles } from './auth/decorators'
 import { CanonicalProductResponse, CreateCanonicalProductRequest } from './canonical-products.dto'
 
 /** Entrada HTTP de la creación canónica acordada en ADR-013. */
@@ -59,9 +61,17 @@ export class CanonicalProductsController {
   @ApiResponse({ status: 409, description: 'Nombre + tipo activo o SKU ya existente' })
   @ApiResponse({ status: 422, description: 'Regla de negocio incumplida' })
   @ApiResponse({ status: 503, description: 'No se pudo comprobar el segundo factor' })
-  async create(@Body() body: CreateCanonicalProductRequest): Promise<CanonicalProductDto> {
+  async create(
+    @Body() body: CreateCanonicalProductRequest,
+    @CurrentIdentity() identity: VerifiedIdentity,
+  ): Promise<CanonicalProductDto> {
     try {
-      return await this.createCanonicalProduct.execute(body)
+      const actor = {
+        subject: identity.subject,
+        email: identity.email ?? undefined,
+        role: [...identity.roles][0] ?? undefined,
+      }
+      return await this.createCanonicalProduct.execute(body, actor)
     } catch (error: unknown) {
       throw CanonicalProductsController.translate(error)
     }
@@ -71,9 +81,14 @@ export class CanonicalProductsController {
     if (
       error instanceof CanonicalProductAlreadyExistsError ||
       error instanceof CanonicalProductSkuAlreadyExistsError ||
-      error instanceof CanonicalProductIdentityAlreadyExistsError
+      error instanceof CanonicalProductIdentityAlreadyExistsError ||
+      error instanceof CanonicalProductConcurrencyConflictError
     ) {
       return new ConflictException(error.message)
+    }
+
+    if (error instanceof OutboxPayloadTooLargeError) {
+      return new BadRequestException(error.message)
     }
 
     if (error instanceof DomainError) {

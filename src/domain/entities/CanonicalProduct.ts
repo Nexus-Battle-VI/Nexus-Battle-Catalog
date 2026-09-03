@@ -29,6 +29,7 @@ export interface CanonicalProductSnapshot {
   readonly realMoneyPrice: { readonly amount: number; readonly currency: string } | null
   readonly createdAt: string
   readonly updatedAt: string
+  readonly version: number
 }
 
 /** Agregado canónico aditivo; el agregado heredado continúa operando por SKU. */
@@ -48,6 +49,7 @@ export class CanonicalProduct {
   readonly realMoneyPrice: Money | null
   readonly createdAt: Date
   readonly updatedAt: Date
+  readonly version: number
 
   private constructor(params: {
     productId: ProductId
@@ -62,6 +64,7 @@ export class CanonicalProduct {
     createdAt: Date
     lifecycleStatus: LifecycleStatus
     updatedAt: Date
+    version?: number
   }) {
     this.productId = params.productId
     this.sku = params.sku
@@ -78,6 +81,7 @@ export class CanonicalProduct {
     this.lifecycleStatus = params.lifecycleStatus
     this.createdAt = new Date(params.createdAt)
     this.updatedAt = new Date(params.updatedAt)
+    this.version = params.version ?? 0
   }
 
   static create(params: {
@@ -96,6 +100,7 @@ export class CanonicalProduct {
       ...params,
       lifecycleStatus: LifecycleStatus.Active,
       updatedAt: params.createdAt,
+      version: 0,
     })
   }
 
@@ -112,6 +117,7 @@ export class CanonicalProduct {
     lifecycleStatus: LifecycleStatus
     createdAt: Date
     updatedAt: Date
+    version?: number
   }): CanonicalProduct {
     return new CanonicalProduct(params)
   }
@@ -137,6 +143,7 @@ export class CanonicalProduct {
           : { amount: this.realMoneyPrice.amount, currency: this.realMoneyPrice.currency },
       createdAt: this.createdAt.toISOString(),
       updatedAt: this.updatedAt.toISOString(),
+      version: this.version,
     }
   }
 }
