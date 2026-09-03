@@ -22,6 +22,7 @@ export interface CanonicalProductDto {
   readonly realMoneyPrice: { readonly amount: number; readonly currency: string } | null
   readonly createdAt: string
   readonly updatedAt: string
+  readonly version: number
 }
 
 export const toCanonicalProductDto = (snapshot: CanonicalProductSnapshot): CanonicalProductDto => ({
@@ -40,4 +41,5 @@ export const toCanonicalProductDto = (snapshot: CanonicalProductSnapshot): Canon
   realMoneyPrice: snapshot.realMoneyPrice,
   createdAt: snapshot.createdAt,
   updatedAt: snapshot.updatedAt,
+  version: snapshot.version,
 })

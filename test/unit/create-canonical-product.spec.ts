@@ -18,6 +18,8 @@ import {
   type CanonicalProductWritePort,
   type HeroSubtypeDefinition,
   type HeroSubtypeRegistryPort,
+  type OutboxEntry,
+  type ProductAuditEntry,
   type ProductReferenceQueryPort,
 } from '../../src/application/ports/CanonicalProductPorts'
 import { HeroSubtypeRegistryV1 } from '../../src/adapters/outbound/registry/HeroSubtypeRegistryV1'
@@ -142,7 +144,7 @@ describe('CreateCanonicalProduct', () => {
     })
     expect(result.attributes.values).toMatchObject({ kind: ProductType.Hero })
     expect(harness.products.created).toHaveLength(1)
-    expect(harness.generate).toHaveBeenCalledTimes(1)
+    expect(harness.generate).toHaveBeenCalledTimes(2)
   })
 
   it('normaliza nombre para la consulta de unicidad por tipo', async () => {
@@ -254,6 +256,93 @@ describe('CreateCanonicalProduct', () => {
 
     await expect(harness.useCase.execute(command)).rejects.toBeInstanceOf(DomainError)
     expect(harness.products.created).toHaveLength(0)
+  })
+
+  it('ejecuta producto, auditoria y outbox de forma atomica con el mismo eventId', async () => {
+    const products = new ProductWriterFake()
+    const subtypes = new HeroSubtypeRegistryFake()
+    const references = new ProductReferencesFake()
+    const auditEntries: ProductAuditEntry[] = []
+    const outboxEntries: OutboxEntry[] = []
+    let executedTx = 0
+
+    const useCase = new CreateCanonicalProduct({
+      products,
+      heroSubtypes: subtypes,
+      productReferences: references,
+      idGenerator: { generate: jest.fn().mockReturnValueOnce(PRODUCT_ID).mockReturnValueOnce('event-123') },
+      clock: { now: () => NOW },
+      unitOfWork: {
+        executeTransaction: async (work) => {
+          executedTx += 1
+          return work({ session: 'fake-session' })
+        },
+      },
+      audit: {
+        record: (entry) => {
+          auditEntries.push(entry)
+          return Promise.resolve()
+        },
+      },
+      outbox: {
+        record: (entry) => {
+          outboxEntries.push(entry)
+          return Promise.resolve()
+        },
+        claim: () => Promise.resolve([]),
+        complete: () => Promise.resolve(),
+        fail: () => Promise.resolve(),
+      },
+    })
+
+    const actor = { subject: 'admin-user-1', email: 'admin@example.test', role: 'ADMINISTRATOR' }
+    const result = await useCase.execute(heroCommand(), actor)
+
+    expect(result.version).toBe(0)
+    expect(executedTx).toBe(1)
+    expect(products.created).toHaveLength(1)
+    expect(products.created[0]?.version).toBe(0)
+
+    expect(auditEntries).toHaveLength(1)
+    expect(auditEntries[0]).toMatchObject({
+      eventId: 'event-123',
+      aggregateId: PRODUCT_ID,
+      aggregateType: 'CanonicalProduct',
+      action: 'PRODUCT_CREATED',
+      actor,
+      timestamp: NOW,
+    })
+
+    expect(outboxEntries).toHaveLength(1)
+    expect(outboxEntries[0]).toMatchObject({
+      eventId: 'event-123',
+      aggregateId: PRODUCT_ID,
+      aggregateType: 'CanonicalProduct',
+      eventType: 'catalog.product.created',
+      eventVersion: 1,
+      status: 'PENDING',
+      attempts: 0,
+    })
+    expect(outboxEntries[0]?.payload).toMatchObject({ productId: PRODUCT_ID, version: 0 })
+  })
+
+  it('un fallo en la unidad de trabajo aborta y no persiste nada', async () => {
+    const products = new ProductWriterFake()
+    const subtypes = new HeroSubtypeRegistryFake()
+    const references = new ProductReferencesFake()
+
+    const useCase = new CreateCanonicalProduct({
+      products,
+      heroSubtypes: subtypes,
+      productReferences: references,
+      idGenerator: { generate: () => PRODUCT_ID },
+      clock: { now: () => NOW },
+      unitOfWork: {
+        executeTransaction: () => Promise.reject(new Error('Fallo forzado en transaccion')),
+      },
+    })
+
+    await expect(useCase.execute(heroCommand())).rejects.toThrow('Fallo forzado en transaccion')
   })
 })
 

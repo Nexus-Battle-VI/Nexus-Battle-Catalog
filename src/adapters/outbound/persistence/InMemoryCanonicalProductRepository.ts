@@ -1,5 +1,6 @@
 import {
   CanonicalProductAlreadyExistsError,
+  CanonicalProductConcurrencyConflictError,
   CanonicalProductIdentityAlreadyExistsError,
   CanonicalProductSkuAlreadyExistsError,
 } from '../../../application/errors/ApplicationError'
@@ -53,6 +54,18 @@ export class InMemoryCanonicalProductRepository implements CanonicalProductRepos
     this.byId.set(product.productId.value, product)
     this.bySku.set(product.sku.value, product.productId.value)
 
+    return Promise.resolve()
+  }
+
+  update(product: CanonicalProduct, expectedVersion: number): Promise<void> {
+    const existing = this.byId.get(product.productId.value)
+    if (existing?.version !== expectedVersion) {
+      return Promise.reject(
+        new CanonicalProductConcurrencyConflictError(product.productId.value, expectedVersion),
+      )
+    }
+
+    this.byId.set(product.productId.value, product)
     return Promise.resolve()
   }
 
