@@ -75,3 +75,61 @@ export class OutboxPayloadTooLargeError extends Error {
     this.name = 'OutboxPayloadTooLargeError'
   }
 }
+
+export class ProductAssetNotFoundError extends Error {
+  constructor(assetId: string) {
+    super(`El recurso visual "${assetId}" no existe.`)
+    this.name = 'ProductAssetNotFoundError'
+  }
+}
+
+export class ProductAssetExpiredError extends Error {
+  constructor(assetId: string) {
+    super(`La intencion de carga del asset "${assetId}" ha expirado.`)
+    this.name = 'ProductAssetExpiredError'
+  }
+}
+
+export class ProductAssetConflictError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ProductAssetConflictError'
+  }
+}
+
+export class ProductAssetInvalidContentError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ProductAssetInvalidContentError'
+  }
+}
+
+export class ProductAssetAnimatedContentError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ProductAssetAnimatedContentError'
+  }
+}
+
+export class ProductAssetChecksumMismatchError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ProductAssetChecksumMismatchError'
+  }
+}
+
+export class ProductAssetLengthMismatchError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ProductAssetLengthMismatchError'
+  }
+}
+
+export class ProductAssetStorageUnavailableError extends Error {
+  constructor(
+    message = 'El almacenamiento de recursos visuales no esta disponible temporalmente.',
+  ) {
+    super(message)
+    this.name = 'ProductAssetStorageUnavailableError'
+  }
+}

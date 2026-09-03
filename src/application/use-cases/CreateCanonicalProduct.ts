@@ -30,9 +30,12 @@ import {
   HeroSubtypeBranchMismatchError,
   InvalidAbilityReferenceError,
   InvalidHeroSubtypeError,
+  OutboxPayloadTooLargeError,
+  ProductAssetInvalidContentError,
 } from '../errors/ApplicationError'
 import type { ClockPort } from '../ports/ClockPort'
 import type { IdGeneratorPort } from '../ports/IdGeneratorPort'
+import type { ProductAssetRepositoryPort } from '../ports/ProductAssetRepositoryPort'
 import {
   HeroCombatBranch,
   OutboxStatus,
@@ -47,7 +50,6 @@ import {
   type ProductOutboxPort,
   type ProductReferenceQueryPort,
 } from '../ports/CanonicalProductPorts'
-import { OutboxPayloadTooLargeError } from '../errors/ApplicationError'
 import { ProductIdFactory } from '../services/ProductIdFactory'
 
 export interface CreateCanonicalProductDependencies {
@@ -59,6 +61,8 @@ export interface CreateCanonicalProductDependencies {
   readonly unitOfWork?: CanonicalProductUnitOfWorkPort
   readonly audit?: ProductAuditPort
   readonly outbox?: ProductOutboxPort
+  readonly productAssets?: ProductAssetRepositoryPort
+  readonly assetsEnforceStrict?: boolean
 }
 
 interface ParsedCreateCommand {
@@ -85,6 +89,7 @@ export class CreateCanonicalProduct {
     }
 
     await this.validateReferences(command.attributes)
+    const referencedAssetId = await this.validateImageAsset(command.imageUrl)
 
     const now = this.deps.clock.now()
     const productId = new ProductIdFactory(this.deps.idGenerator).create()
@@ -150,6 +155,10 @@ export class CreateCanonicalProduct {
       if (this.deps.outbox) await this.deps.outbox.record(outboxEntry)
     }
 
+    if (referencedAssetId && this.deps.productAssets) {
+      await this.deps.productAssets.associateProduct(referencedAssetId, productId.value)
+    }
+
     return dto
   }
 
@@ -201,6 +210,33 @@ export class CreateCanonicalProduct {
     if (definition.combatBranch !== expectedBranch) {
       throw new HeroSubtypeBranchMismatchError(definition.code, expectedBranch)
     }
+  }
+
+  private async validateImageAsset(imageUrl: ProductImageUrl): Promise<string | null> {
+    const assetRegex =
+      /\/api\/v1\/catalog\/product-assets\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/content/i
+    const match = assetRegex.exec(imageUrl.value)
+
+    if (match?.[1]) {
+      const assetId = match[1]
+      if (this.deps.productAssets) {
+        const asset = await this.deps.productAssets.findById(assetId)
+        if (!asset?.isReady()) {
+          throw new ProductAssetInvalidContentError(
+            `El recurso visual "${assetId}" referenciado en imageUrl no existe o no ha sido finalizado con exito.`,
+          )
+        }
+      }
+      return assetId
+    }
+
+    if (this.deps.assetsEnforceStrict) {
+      throw new ProductAssetInvalidContentError(
+        'Solo se admiten URLs de recursos visuales gestionados en /api/v1/catalog/product-assets/{assetId}/content.',
+      )
+    }
+
+    return null
   }
 }
 
