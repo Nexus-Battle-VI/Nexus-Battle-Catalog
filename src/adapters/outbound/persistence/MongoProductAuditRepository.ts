@@ -23,6 +23,26 @@ export interface ProductAuditDocument {
 }
 
 /**
+ * Traduce el actor OMITIENDO las claves ausentes en lugar de escribirlas.
+ *
+ * El controlador entrega `role` y `email` como `undefined` cuando el testimonio
+ * no los trae -un testimonio de acceso de Cognito NO lleva `email`-, y el
+ * controlador de MongoDB serializa `undefined` como **null**, no como ausencia.
+ * El validador de `audit_log` (migracion 005) declara ambos `bsonType: 'string'`,
+ * asi que ese null hace fallar el documento entero con `Document failed
+ * validation`, la transaccion se aborta y la creacion responde 500.
+ *
+ * Comprobado contra el sistema desplegado: con `email: undefined` MongoDB
+ * responde `consideredType: "null"`; omitiendo la clave, el mismo documento
+ * pasa. La prueba de `test/db` reproduce ambos casos.
+ */
+const toActorDocument = (actor: ProductAuditEntry['actor']): ProductAuditDocument['actor'] => ({
+  subject: actor.subject,
+  ...(actor.role === undefined ? {} : { role: actor.role }),
+  ...(actor.email === undefined ? {} : { email: actor.email }),
+})
+
+/**
  * Adaptador de auditoría insert-only en MongoDB (EN-027.7 / ADR-015).
  *
  * La identidad runtime solo tiene permiso para insertar registros; no se
@@ -43,7 +63,7 @@ export class MongoProductAuditRepository implements ProductAuditPort {
       aggregateId: entry.aggregateId,
       aggregateType: entry.aggregateType,
       action: entry.action,
-      actor: entry.actor,
+      actor: toActorDocument(entry.actor),
       timestamp: new Date(entry.timestamp),
       snapshot: entry.snapshot as unknown as Record<string, unknown>,
       ...(entry.delta ? { delta: entry.delta } : {}),
