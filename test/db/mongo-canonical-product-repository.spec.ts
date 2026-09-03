@@ -366,6 +366,96 @@ describe('MongoCanonicalProductRepository', () => {
     )
   })
 
+  describe('updateRating (HU-40, CA-03)', () => {
+    it('aplica el agregado y avanza la version', async () => {
+      const product = buildProduct(...ATTRIBUTE_FIXTURES[2])
+      await repository.create(product)
+
+      const matched = await repository.updateRating(
+        product.productId,
+        { averageRating: 4.5, reviewCount: 2 },
+        new Date('2026-09-03T10:00:00.000Z'),
+      )
+
+      expect(matched).toBe(true)
+      const found = await products().findOne({ _id: product.productId.value })
+      expect(found?.averageRating).toBe(4.5)
+      expect(found?.reviewCount ? Long.fromValue(found.reviewCount).toNumber() : null).toBe(2)
+      expect(found?.version ? Long.fromValue(found.version).toNumber() : 0).toBe(
+        product.version + 1,
+      )
+    })
+
+    it('un reintento con el mismo agregado deja el mismo resultado', async () => {
+      const product = buildProduct(...ATTRIBUTE_FIXTURES[2])
+      await repository.create(product)
+
+      await repository.updateRating(
+        product.productId,
+        { averageRating: 3, reviewCount: 1 },
+        new Date(),
+      )
+      await repository.updateRating(
+        product.productId,
+        { averageRating: 3, reviewCount: 1 },
+        new Date(),
+      )
+
+      const found = await products().findOne({ _id: product.productId.value })
+      expect(found?.averageRating).toBe(3)
+      expect(found?.reviewCount ? Long.fromValue(found.reviewCount).toNumber() : null).toBe(1)
+    })
+
+    it('devuelve false para un producto inexistente, sin escribir nada', async () => {
+      const matched = await repository.updateRating(
+        ProductId.create('ffffffff-ffff-4fff-8fff-ffffffffffff'),
+        { averageRating: 5, reviewCount: 1 },
+        new Date(),
+      )
+
+      expect(matched).toBe(false)
+    })
+
+    it('rechaza un agregado inconsistente antes de escribir', async () => {
+      const product = buildProduct(...ATTRIBUTE_FIXTURES[2])
+      await repository.create(product)
+
+      await expect(
+        repository.updateRating(
+          product.productId,
+          { averageRating: 4, reviewCount: 0 },
+          new Date(),
+        ),
+      ).rejects.toThrow()
+
+      const found = await products().findOne({ _id: product.productId.value })
+      expect(found?.averageRating).toBeNull()
+      expect(found?.reviewCount ? Long.fromValue(found.reviewCount).toNumber() : 0).toBe(0)
+    })
+
+    it('avanza la version del producto para que una actualizacion administrativa obsoleta choque', async () => {
+      const product = buildProduct(...ATTRIBUTE_FIXTURES[2])
+      await repository.create(product)
+
+      await repository.updateRating(
+        product.productId,
+        { averageRating: 5, reviewCount: 1 },
+        new Date(),
+      )
+
+      // `product` sigue con la version ORIGINAL, como si un administrador lo
+      // hubiera leido antes de la calificacion. Su `update()` debe chocar.
+      const doc = toCanonicalDocument(product)
+      const staleWriter = toCanonicalProduct({
+        ...doc,
+        version: Long.fromNumber(product.version + 1),
+      })
+      await expect(repository.update(staleWriter, product.version)).rejects.toBeInstanceOf(
+        CanonicalProductConcurrencyConflictError,
+      )
+    })
+  })
+
   describe('lectura por referencia y por lote (HU-27)', () => {
     it('prioriza la identidad canónica si otro producto usa el mismo UUID como alias', async () => {
       const productId = 'abcdefab-abcd-4abc-8abc-abcdefabcdef'

@@ -13,10 +13,12 @@ import {
 import { CanonicalProductsController } from '../../adapters/inbound/http/canonical-products.controller'
 import { AdminProductsController } from '../../adapters/inbound/http/admin-products.controller'
 import { InternalProductAcquisitionsController } from '../../adapters/inbound/http/internal-product-acquisitions.controller'
+import { InternalProductRatingController } from '../../adapters/inbound/http/internal-product-rating.controller'
 import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
 import { AdjustProductInventory } from '../../application/use-cases/AdjustProductInventory'
 import { GetCanonicalProduct } from '../../application/use-cases/GetCanonicalProduct'
 import { AcquireProductUnit } from '../../application/use-cases/AcquireProductUnit'
+import { UpdateProductRating } from '../../application/use-cases/UpdateProductRating'
 import { ListCatalogStorefront } from '../../application/use-cases/ListCatalogStorefront'
 import type { CatalogStorefrontPort } from '../../application/ports/CatalogStorefrontPort'
 import { StockReservations } from '../../application/use-cases/StockReservations'
@@ -45,6 +47,7 @@ import {
   ADJUST_PRODUCT_INVENTORY,
   GET_CANONICAL_PRODUCT,
   ACQUIRE_PRODUCT_UNIT,
+  UPDATE_PRODUCT_RATING,
   CREATE_PRODUCT_ASSET_UPLOAD_INTENT,
   FINALIZE_PRODUCT_ASSET,
   GET_PRODUCT_ASSET_CONTENT,
@@ -152,6 +155,7 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
     CanonicalProductsController,
     AdminProductsController,
     InternalProductAcquisitionsController,
+    InternalProductRatingController,
     InternalStockReservationsController,
     AdminProductAssetsController,
     CatalogProductAssetsController,
@@ -340,9 +344,10 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         new InternalServiceGuard({
           reflector,
           secret: config.internalServiceAuthSecret,
-          // Lista explicita: hoy solo Commerce adquiere unidades. Subasta se
-          // anade cuando exista, y anadirla obliga a decidirlo aqui.
-          allowedServices: ['commerce'],
+          // Lista explicita: Commerce adquiere unidades y Community empuja el
+          // agregado de calificaciones (HU-40). Subasta se anade cuando
+          // exista, y anadirla obliga a decidirlo aqui.
+          allowedServices: ['commerce', 'community'],
           clock: new SystemClock(),
           logger,
         }),
@@ -488,6 +493,14 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         CANONICAL_PRODUCT_UNIT_OF_WORK,
         PRODUCT_OUTBOX_PORT,
       ],
+    },
+    {
+      provide: UPDATE_PRODUCT_RATING,
+      useFactory: (
+        products: CanonicalProductRepositoryPort,
+        clock: ClockPort,
+      ): UpdateProductRating => new UpdateProductRating({ products, clock }),
+      inject: [CANONICAL_PRODUCT_WRITE, CLOCK],
     },
     {
       provide: CREATE_CANONICAL_PRODUCT,

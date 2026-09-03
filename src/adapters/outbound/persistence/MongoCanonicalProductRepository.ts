@@ -19,7 +19,10 @@ import type {
   CanonicalProductRepositoryPort,
   TransactionContext,
 } from '../../../application/ports/CanonicalProductPorts'
-import { normalizeProductName } from '../../../domain/entities/CanonicalProduct'
+import {
+  assertRatingAggregate,
+  normalizeProductName,
+} from '../../../domain/entities/CanonicalProduct'
 import type { CanonicalProduct } from '../../../domain/entities/CanonicalProduct'
 import type { ProductId, ProductType } from '../../../domain/value-objects/canonical-product-values'
 import {
@@ -242,6 +245,45 @@ export class MongoCanonicalProductRepository
     return documento.lifecycleStatus === 'ACTIVE' && documento.printRunMode === 'INFINITE'
       ? { availableUnits: null, depleted: false }
       : null
+  }
+
+  /**
+   * Aplica el agregado de calificaciones en una sola escritura condicionada
+   * (HU-40, CA-03), en el mismo estilo directo que `decrementAvailability`:
+   * sin reconstruir el agregado completo, porque esta escritura no depende de
+   * ningun otro campo del producto.
+   *
+   * LA VERSION AVANZA IGUAL QUE EN `decrementAvailability`. Sin eso, un
+   * `update()` de administracion que hubiera leido el producto ANTES de esta
+   * calificacion escribiria despues con `replaceOne` sobre la misma version y
+   * pisaria en silencio el promedio recien empujado. Al avanzarla, ese
+   * `update()` choca con `CanonicalProductConcurrencyConflictError` en vez de
+   * perder el dato.
+   */
+  async updateRating(
+    productId: ProductId,
+    rating: { averageRating: number | null; reviewCount: number },
+    at: Date,
+    context?: TransactionContext,
+  ): Promise<boolean> {
+    assertRatingAggregate(rating.averageRating, rating.reviewCount)
+
+    const session = context?.session ? (context.session as ClientSession) : undefined
+
+    const result = await this.products.updateOne(
+      { _id: productId.value, type: { $exists: true } },
+      {
+        $set: {
+          averageRating: rating.averageRating,
+          reviewCount: Long.fromNumber(rating.reviewCount),
+          updatedAt: at,
+        },
+        $inc: { version: Long.fromNumber(1) },
+      },
+      { session },
+    )
+
+    return result.matchedCount > 0
   }
 
   private translateDuplicate(error: unknown, product: CanonicalProduct): never {

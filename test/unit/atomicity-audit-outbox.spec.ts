@@ -49,6 +49,8 @@ describe('EN-027.6: Concurrencia optimista y Unidad Transaccional', () => {
       lifecycleStatus: LifecycleStatus.Active,
       createdAt: new Date('2026-09-01T00:00:00.000Z'),
       updatedAt: new Date('2026-09-01T00:00:00.000Z'),
+      averageRating: null,
+      reviewCount: 0,
       version,
     })
 
@@ -115,6 +117,8 @@ describe('EN-027.7: Auditoría insert-only de Producto', () => {
       creditsPrice: 500,
       premium: false,
       realMoneyPrice: null,
+      averageRating: null,
+      reviewCount: 0,
       createdAt: '2026-09-02T12:00:00.000Z',
       updatedAt: '2026-09-02T12:00:00.000Z',
       version: 0,
