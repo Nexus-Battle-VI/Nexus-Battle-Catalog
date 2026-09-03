@@ -3,6 +3,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Inject,
@@ -20,8 +21,9 @@ import {
 } from '../../../application/errors/ApplicationError'
 import type { CanonicalProductDto } from '../../../application/dto/CanonicalProductDto'
 import type { AdjustProductInventory } from '../../../application/use-cases/AdjustProductInventory'
+import type { GetCanonicalProduct } from '../../../application/use-cases/GetCanonicalProduct'
 import { Role, type VerifiedIdentity } from '../../../application/ports/TokenVerifierPort'
-import { ADJUST_PRODUCT_INVENTORY } from './tokens'
+import { ADJUST_PRODUCT_INVENTORY, GET_CANONICAL_PRODUCT } from './tokens'
 import { CurrentIdentity, RequiresMfaEvidence, Roles } from './auth/decorators'
 import { AdjustInventoryRequest, CanonicalProductResponse } from './admin-products.dto'
 
@@ -39,7 +41,32 @@ export class AdminProductsController {
   constructor(
     @Inject(ADJUST_PRODUCT_INVENTORY)
     private readonly adjustProductInventory: AdjustProductInventory,
+    @Inject(GET_CANONICAL_PRODUCT)
+    private readonly getCanonicalProduct: GetCanonicalProduct,
   ) {}
+
+  @Get(':id')
+  @Roles(Role.Administrator)
+  @ApiOperation({
+    operationId: 'getCatalogProductForAdministrationV1',
+    summary: 'Consulta un producto canonico con su disponibilidad',
+  })
+  @ApiParam({ name: 'id', description: 'Identificador del producto canonico' })
+  @ApiResponse({ status: 200, description: 'Producto', type: CanonicalProductResponse })
+  @ApiResponse({ status: 401, description: 'Testimonio ausente, invalido o vencido' })
+  @ApiResponse({ status: 403, description: 'Rol no autorizado' })
+  @ApiResponse({ status: 404, description: 'El producto no existe' })
+  async getOne(@Param('id') id: string): Promise<CanonicalProductDto> {
+    try {
+      return await this.getCanonicalProduct.execute(id)
+    } catch (error: unknown) {
+      throw AdminProductsController.translate(error)
+    }
+  }
+
+  // La LECTURA no exige segundo factor y la MUTACION si. No es un descuido:
+  // consultar no cambia nada, y exigir la evidencia en cada lectura ataria la
+  // pantalla a una llamada de red por pulsacion sin ganar ninguna proteccion.
 
   @Patch(':id/inventory')
   @HttpCode(HttpStatus.OK)
