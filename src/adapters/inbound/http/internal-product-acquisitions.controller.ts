@@ -24,6 +24,7 @@ import type {
 import { ACQUIRE_PRODUCT_UNIT } from './tokens'
 import { InternalOnly, Public } from './auth/decorators'
 import { AcquireUnitRequest } from './internal-product-acquisitions.dto'
+import { StockReservationConflictError } from '../../../application/use-cases/StockReservations'
 
 /**
  * Contrato interno de adquisición (HU-34).
@@ -73,7 +74,7 @@ export class InternalProductAcquisitionsController {
     // Agotado es 409 y no 422: la peticion es correcta y lo que falla es el
     // ESTADO del producto. La misma peticion habria funcionado un segundo antes
     // y volvera a funcionar si el administrador amplia el tiraje.
-    if (error instanceof ProductSoldOutError) {
+    if (error instanceof ProductSoldOutError || error instanceof StockReservationConflictError) {
       return new ConflictException(error.message)
     }
 

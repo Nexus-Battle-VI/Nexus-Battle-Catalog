@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
+  IsArray,
   IsBoolean,
   IsIn,
   IsInt,
@@ -16,6 +19,7 @@ import {
 import { Type } from 'class-transformer'
 
 const KEBAB = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/
+const PRODUCT_TYPES = ['HEROE', 'HABILIDAD', 'ARMA', 'ARMADURA', 'ITEM', 'EPICA'] as const
 
 export class RealMoneyPriceRequest {
   @ApiProperty({ minimum: 1, example: 999 })
@@ -151,4 +155,46 @@ export class CanonicalProductResponse {
 
   @ApiProperty({ example: 0, readOnly: true })
   version!: number
+}
+
+/**
+ * Cuerpo de POST /api/v1/catalog/products/lookup.
+ *
+ * Es una CONSULTA (no muta): resuelve muchas referencias en una sola llamada
+ * para que un consumidor —Player/Inventory en HU-27— evite un N+1. `references`
+ * casa cada valor contra `productId` (UUID) o contra el alias `sku`.
+ */
+export class LookupCanonicalProductsRequest {
+  @ApiProperty({
+    type: [String],
+    minItems: 1,
+    maxItems: 500,
+    description: 'productId (UUID) o sku alias de cada producto poseído por el consumidor.',
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(500)
+  @IsString({ each: true })
+  @Length(1, 128, { each: true })
+  references!: string[]
+
+  @ApiPropertyOptional({
+    minLength: 1,
+    maxLength: 80,
+    description: 'Filtra por substring del nombre normalizado (NFKC + minúsculas).',
+  })
+  @IsOptional()
+  @IsString()
+  @Length(1, 80)
+  query?: string
+
+  @ApiPropertyOptional({ enum: PRODUCT_TYPES })
+  @IsOptional()
+  @IsIn(PRODUCT_TYPES)
+  type?: string
+}
+
+export class LookupCanonicalProductsResponse {
+  @ApiProperty({ type: CanonicalProductResponse, isArray: true })
+  items!: CanonicalProductResponse[]
 }

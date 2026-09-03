@@ -87,13 +87,34 @@ reutiliza desde el objeto de valor `Money`.
 
 ## Puertos
 
-| Puerto                  | Responsabilidad                         | Implementación actual       |
-| ----------------------- | --------------------------------------- | --------------------------- |
-| `ProductRepositoryPort` | Persistir, recuperar y buscar productos | `InMemoryProductRepository` |
-| `ClockPort`             | Proveer el instante actual              | `SystemClock`               |
-| `IdGeneratorPort`       | Generar identificadores                 | `UuidGenerator`             |
+| Puerto                       | Responsabilidad                                | Implementación actual                                                 |
+| ---------------------------- | ---------------------------------------------- | --------------------------------------------------------------------- |
+| `ProductRepositoryPort`      | Persistir, recuperar y buscar productos        | `InMemoryProductRepository`                                           |
+| `ProductAssetRepositoryPort` | Persistir intenciones y metadatos de assets    | `InMemoryProductAssetRepository`                                      |
+| `ProductAssetStoragePort`    | Crear cargas firmadas, promover y leer objetos | `InMemoryProductAssetStorageAdapter` / `S3ProductAssetStorageAdapter` |
+| `ClockPort`                  | Proveer el instante actual                     | `SystemClock`                                                         |
+| `IdGeneratorPort`            | Generar identificadores                        | `UuidGenerator`                                                       |
 
 La búsqueda incluye la bandera `includeHidden`, que **por defecto es falsa**: la visibilidad es la regla, y ver borradores es la excepción que debe pedirse de forma explícita.
+
+## Recursos visuales de Producto
+
+Catalog conserva la semántica y las referencias de los recursos visuales; los
+binarios viven fuera de MongoDB. El flujo de una imagen principal es:
+
+```text
+Administrador -> Catalog: intención firmada
+Web -> S3 privado: POST directo a staging/<assetId>
+Administrador -> Catalog: finalización
+Catalog: valida contenido y promueve a assets/<assetId>/<sha256>
+Producto: persiste la URL canónica de Catalog, no una URL firmada de S3
+```
+
+`ProductAssetStoragePort` evita que el dominio y los casos de uso conozcan AWS.
+El adaptador S3 se elige en la raíz de composición mediante
+`ASSETS_STORAGE_DRIVER`; el adaptador en memoria permite pruebas y desarrollo
+local. Las URL de lectura firmadas expiran en cinco minutos y Catalog responde
+con una redirección temporal `307`.
 
 ## Patrones aplicados
 
