@@ -1,4 +1,4 @@
-import type { Db } from 'mongodb'
+import { Long, type Db } from 'mongodb'
 
 const record = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -66,11 +66,17 @@ export const up = async (db: Db): Promise<void> => {
 
   // FASE 2 - Rellenar los documentos canonicos ya existentes: nacen sin
   // calificaciones, igual que un producto creado hoy.
+  //
+  // `Long.fromNumber(0)`, NO el literal `0`. El driver serializa un numero JS
+  // pequeno como `int32` por defecto, y el esquema recien abierto exige
+  // `bsonType: 'long'` para `reviewCount`: un `0` sin envolver hace fallar
+  // esta misma escritura con `Document failed validation`. Se descubrio
+  // ejecutandolo contra un MongoDB real.
   await db
     .collection('products')
     .updateMany(
       { type: { $exists: true }, reviewCount: { $exists: false } },
-      { $set: { averageRating: null, reviewCount: 0 } },
+      { $set: { averageRating: null, reviewCount: Long.fromNumber(0) } },
     )
 
   // FASE 3 - Exigir los campos y su coherencia mutua.
