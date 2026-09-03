@@ -9,6 +9,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   BadRequestException,
   UnprocessableEntityException,
 } from '@nestjs/common'
@@ -29,6 +30,11 @@ import {
 } from '../../../application/errors/ApplicationError'
 import type { CanonicalProductDto } from '../../../application/dto/CanonicalProductDto'
 import type { CreateCanonicalProduct } from '../../../application/use-cases/CreateCanonicalProduct'
+import {
+  ListCatalogStorefront,
+  type CatalogStorefrontResult,
+} from '../../../application/use-cases/ListCatalogStorefront'
+import { CatalogStorefrontRequest, CatalogStorefrontResponse } from './catalog-storefront.dto'
 import type {
   GetCanonicalProductByReference,
   LookupCanonicalProducts,
@@ -60,6 +66,7 @@ export class CanonicalProductsController {
     private readonly getCanonicalProduct: GetCanonicalProductByReference,
     @Inject(LOOKUP_CANONICAL_PRODUCTS)
     private readonly lookupCanonicalProducts: LookupCanonicalProducts,
+    private readonly listCatalogStorefront: ListCatalogStorefront,
   ) {}
 
   @Post()
@@ -120,6 +127,23 @@ export class CanonicalProductsController {
       return await this.lookupCanonicalProducts.execute(body)
     } catch (error: unknown) {
       throw CanonicalProductsController.translate(error)
+    }
+  }
+
+  @Public()
+  @Get()
+  @ApiOperation({
+    operationId: 'listCatalogStorefrontV1',
+    summary: 'Vitrina canónica ACTIVE, incluidos agotados; páginas estables de 16 productos',
+  })
+  @ApiResponse({ status: 200, type: CatalogStorefrontResponse })
+  @ApiResponse({ status: 400, description: 'Filtro inválido o rango de precio sin moneda' })
+  async list(@Query() query: CatalogStorefrontRequest): Promise<CatalogStorefrontResult> {
+    try {
+      return await this.listCatalogStorefront.execute(query)
+    } catch (error: unknown) {
+      if (error instanceof DomainError) throw new BadRequestException(error.message)
+      throw error
     }
   }
 

@@ -22,12 +22,15 @@ import {
 } from '../../../domain/value-objects/canonical-product-values'
 import { Money, ProductName, Sku } from '../../../domain/value-objects/catalog-values'
 import { PersistenceMappingError } from './mapping'
+import { storefrontProjection } from './storefront-search-projection'
 
 export interface CanonicalProductDocument {
   readonly _id: string
   readonly sku: string
   readonly name: string
   readonly normalizedName: string
+  readonly storefrontSearchText?: string
+  readonly storefrontSearchTokens?: readonly number[]
   readonly description: string
   readonly imageUrl: string
   readonly type: ProductType
@@ -79,6 +82,7 @@ export const toCanonicalDocument = (product: CanonicalProduct): CanonicalProduct
     sku: snapshot.sku,
     name: snapshot.name,
     normalizedName: snapshot.normalizedName,
+    ...storefrontProjection(snapshot),
     description: snapshot.description,
     imageUrl: snapshot.imageUrl,
     type: snapshot.type,

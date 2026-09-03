@@ -367,6 +367,26 @@ describe('MongoCanonicalProductRepository', () => {
   })
 
   describe('lectura por referencia y por lote (HU-27)', () => {
+    it('prioriza la identidad canónica si otro producto usa el mismo UUID como alias', async () => {
+      const productId = 'abcdefab-abcd-4abc-8abc-abcdefabcdef'
+      const aliasOwner = buildProduct(...ATTRIBUTE_FIXTURES[2], {
+        productId: '99999999-9999-4999-8999-999999999998',
+        sku: productId,
+        name: 'Alias con forma UUID',
+      })
+      const canonical = buildProduct(...ATTRIBUTE_FIXTURES[2], {
+        productId,
+        sku: 'identidad-canonica',
+        name: 'Identidad canónica prioritaria',
+      })
+      await repository.create(aliasOwner)
+      await repository.create(canonical)
+      expect((await repository.findByReference(productId))?.productId.value).toBe(productId)
+      expect((await repository.findByReference('identidad-canonica'))?.productId.value).toBe(
+        productId,
+      )
+    })
+
     it('findByReference resuelve por productId y por alias sku', async () => {
       const product = buildProduct(...ATTRIBUTE_FIXTURES[2], {
         productId: '99999999-9999-4999-8999-999999999999',
