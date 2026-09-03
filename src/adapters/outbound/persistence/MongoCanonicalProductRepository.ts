@@ -23,6 +23,12 @@ import { normalizeProductName } from '../../../domain/entities/CanonicalProduct'
 import type { CanonicalProduct } from '../../../domain/entities/CanonicalProduct'
 import type { ProductId, ProductType } from '../../../domain/value-objects/canonical-product-values'
 import {
+  STOREFRONT_PAGE_SIZE,
+  type CatalogStorefrontPort,
+  type CatalogStorefrontQuery,
+} from '../../../application/ports/CatalogStorefrontPort'
+import { storefrontMatches } from '../../../domain/services/storefront-search'
+import {
   toCanonicalDocument,
   toCanonicalProduct,
   toCanonicalSnapshot,
@@ -30,7 +36,9 @@ import {
 } from './canonical-mapping'
 
 /** Escritura canónica aditiva sobre la misma colección que conserva el legado. */
-export class MongoCanonicalProductRepository implements CanonicalProductRepositoryPort {
+export class MongoCanonicalProductRepository
+  implements CanonicalProductRepositoryPort, CatalogStorefrontPort
+{
   private readonly products: Collection<CanonicalProductDocument>
 
   constructor(db: Db) {
@@ -114,6 +122,41 @@ export class MongoCanonicalProductRepository implements CanonicalProductReposito
     return document === null ? null : toCanonicalProduct(document)
   }
 
+  async listStorefront(
+    query: CatalogStorefrontQuery,
+  ): Promise<{ items: readonly CanonicalProduct[]; total: number }> {
+    const filter: Filter<CanonicalProductDocument> = {
+      lifecycleStatus: 'ACTIVE',
+      type: query.type ?? { $exists: true },
+    }
+    if (query.currency !== undefined) filter['realMoneyPrice.currency'] = query.currency
+    if (query.minPrice !== undefined || query.maxPrice !== undefined) {
+      filter['realMoneyPrice.amount'] = {
+        ...(query.minPrice === undefined ? {} : { $gte: Long.fromNumber(query.minPrice) }),
+        ...(query.maxPrice === undefined ? {} : { $lte: Long.fromNumber(query.maxPrice) }),
+      }
+    }
+    // One cursor over the server-filtered, stable ordering. Literal matching also
+    // covers nested attributes and prices without JavaScript in MongoDB or regex
+    // injection. Retain only one page in memory; total counts the complete match.
+    // This is not a full-text index: broad text queries scan the filtered set.
+    const cursor = this.products.find(filter).sort({ normalizedName: 1, _id: 1 })
+    const items: CanonicalProduct[] = []
+    const offset = (query.page - 1) * STOREFRONT_PAGE_SIZE
+    let total = 0
+    try {
+      for await (const document of cursor) {
+        const product = toCanonicalProduct(document)
+        if (!storefrontMatches(product.toSnapshot(), query.query)) continue
+        if (total >= offset && items.length < STOREFRONT_PAGE_SIZE) items.push(product)
+        total += 1
+      }
+    } finally {
+      await cursor.close()
+    }
+    return { items, total }
+  }
+
   /**
    * Resuelve muchas referencias en UNA consulta.
    *
@@ -186,6 +229,7 @@ export class MongoCanonicalProductRepository implements CanonicalProductReposito
     const actualizado = await this.products.findOneAndUpdate(
       {
         _id: productId.value,
+        lifecycleStatus: 'ACTIVE',
         printRunMode: { $ne: 'INFINITE' },
         availableUnits: { $gt: Long.fromNumber(0) },
       },
@@ -214,7 +258,9 @@ export class MongoCanonicalProductRepository implements CanonicalProductReposito
       return null
     }
 
-    return documento.printRunMode === 'INFINITE' ? { availableUnits: null, depleted: false } : null
+    return documento.lifecycleStatus === 'ACTIVE' && documento.printRunMode === 'INFINITE'
+      ? { availableUnits: null, depleted: false }
+      : null
   }
 
   private translateDuplicate(error: unknown, product: CanonicalProduct): never {

@@ -1,5 +1,8 @@
 # Nexus-Battle-Catalog
 
+Contrato de vitrina canónica y reserva de stock para compra simulada:
+[integración ecommerce](docs/ecommerce-contract.md).
+
 Servicio de catálogo de Nexus Battles VI. Implementa el bounded context **Catalog**: qué productos existen, cómo se llaman, a qué categoría pertenecen, cuánto cuestan y si están a la venta.
 
 Este repositorio contiene código y Pull Requests. No contiene Issues ni Product Backlog: la fuente única de verdad es [Nexus-Battle-Management](https://github.com/Nexus-Battle-VI/Nexus-Battle-Management).

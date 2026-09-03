@@ -269,15 +269,32 @@ export class CanonicalProduct {
    * misma regla para los almacenes que no pueden condicionar la escritura.
    */
   consumeUnit(at: Date): CanonicalProduct {
+    return this.reserveUnits(1, at)
+  }
+
+  reserveUnits(quantity: number, at: Date): CanonicalProduct {
+    if (!Number.isSafeInteger(quantity) || quantity < 1)
+      throw new DomainError('La cantidad debe ser un entero positivo seguro.')
+    if (this.lifecycleStatus !== LifecycleStatus.Active)
+      throw new DomainError('El producto está suspendido.')
     if (this.availableUnits === null) {
       return this
     }
 
-    if (this.availableUnits === 0) {
+    if (this.availableUnits < quantity) {
       throw new DomainError(`El producto ${this.productId.value} esta agotado.`)
     }
 
-    return this.copyWith(this.printRun, this.availableUnits - 1, at)
+    return this.copyWith(this.printRun, this.availableUnits - quantity, at)
+  }
+
+  releaseUnits(quantity: number, at: Date): CanonicalProduct {
+    if (!Number.isSafeInteger(quantity) || quantity < 1)
+      throw new DomainError('La cantidad debe ser un entero positivo seguro.')
+    if (this.availableUnits === null) return this
+    if (this.availableUnits + quantity > this.printRun.value)
+      throw new DomainError('La devolución supera el tiraje.')
+    return this.copyWith(this.printRun, this.availableUnits + quantity, at)
   }
 
   toSnapshot(): CanonicalProductSnapshot {
