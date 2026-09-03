@@ -34,6 +34,7 @@ export interface CanonicalProductDocument {
   readonly attributes: ProductAttributes
   readonly printRun: Long
   readonly printRunMode: PrintRunMode
+  readonly availableUnits: Long | null
   readonly lifecycleStatus: LifecycleStatus
   readonly creditsPrice: Long
   readonly premium: boolean
@@ -84,6 +85,13 @@ export const toCanonicalDocument = (product: CanonicalProduct): CanonicalProduct
     attributes: snapshot.attributes,
     printRun: toLong(snapshot.printRun, 'printRun', snapshot.productId),
     printRunMode: snapshot.printRunMode,
+    // `null` explicito, NO `undefined`. El controlador de MongoDB serializa
+    // `undefined` como null de todos modos, pero escribirlo asi deja dicho que
+    // la ausencia de contador es el valor y no un campo que se olvido.
+    availableUnits:
+      snapshot.availableUnits === null
+        ? null
+        : toLong(snapshot.availableUnits, 'availableUnits', snapshot.productId),
     lifecycleStatus: snapshot.lifecycleStatus,
     creditsPrice: toLong(snapshot.creditsPrice, 'creditsPrice', snapshot.productId),
     premium: snapshot.premium,
@@ -122,6 +130,15 @@ export const toCanonicalSnapshot = (
   attributes: document.attributes,
   printRun: toExactInteger(document.printRun, 'printRun', document._id),
   printRunMode: document.printRunMode,
+  // Solo `null` cuenta como ausencia de contador. Un documento al que le
+  // FALTE el campo no se traduce como infinito: caeria en `toExactInteger` y
+  // fallaria con un error de mapeo, que es lo correcto -significaria que la
+  // migracion 007 no se aplico- frente a convertir en silencio un producto
+  // limitado en uno inagotable.
+  availableUnits:
+    document.availableUnits === null
+      ? null
+      : toExactInteger(document.availableUnits, 'availableUnits', document._id),
   lifecycleStatus: document.lifecycleStatus,
   creditsPrice: toExactInteger(document.creditsPrice, 'creditsPrice', document._id),
   premium: document.premium,
@@ -262,6 +279,7 @@ export const toCanonicalProduct = (document: CanonicalProductDocument): Canonica
       type,
       attributes: parsePersistedAttributes(document.attributes, type, snapshot.productId),
       printRun,
+      availableUnits: snapshot.availableUnits,
       pricing: ProductPricing.create({
         creditsPrice: CreditsPrice.create(snapshot.creditsPrice),
         premium: snapshot.premium,
