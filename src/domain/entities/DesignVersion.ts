@@ -53,26 +53,29 @@ export class DesignVersion {
   readonly status: DesignVersionStatus
   readonly resources: readonly GraphicResource[]
   readonly authorId: string
-  readonly createdAt: Date
   readonly visualReference?: string
   readonly versionNumber?: number
-  readonly appliedAt?: Date
   readonly restoredFromVersionId?: string
+  private readonly createdAtMillis: number
+  private readonly appliedAtMillis?: number
 
   private constructor(snapshot: DesignVersionSnapshot) {
     this.designVersionId = normalizeUuid(snapshot.designVersionId, 'designVersionId')
     this.productId = normalizeUuid(snapshot.productId, 'productId')
     this.status = snapshot.status
-    this.resources = snapshot.resources.map((resource) => GraphicResource.create(resource))
+    this.resources = Object.freeze(
+      snapshot.resources.map((resource) => GraphicResource.create(resource)),
+    )
     this.authorId = snapshot.authorId.trim()
-    this.createdAt = new Date(snapshot.createdAt)
+    this.createdAtMillis = snapshot.createdAt.getTime()
     this.visualReference = snapshot.visualReference?.trim()
     this.versionNumber = snapshot.versionNumber
-    this.appliedAt = snapshot.appliedAt === undefined ? undefined : new Date(snapshot.appliedAt)
+    this.appliedAtMillis = snapshot.appliedAt?.getTime()
     this.restoredFromVersionId =
       snapshot.restoredFromVersionId === undefined
         ? undefined
         : normalizeUuid(snapshot.restoredFromVersionId, 'restoredFromVersionId')
+    Object.freeze(this)
   }
 
   static createDraft(
@@ -132,6 +135,18 @@ export class DesignVersion {
       }
 
       validDate(snapshot.appliedAt, 'appliedAt')
+
+      if (snapshot.appliedAt.getTime() < snapshot.createdAt.getTime()) {
+        throw new DomainError('appliedAt no puede ser anterior a createdAt.')
+      }
+
+      if (
+        snapshot.restoredFromVersionId !== undefined &&
+        normalizeUuid(snapshot.restoredFromVersionId, 'restoredFromVersionId') ===
+          normalizeUuid(snapshot.designVersionId, 'designVersionId')
+      ) {
+        throw new DomainError('Una versión no puede restaurarse desde sí misma.')
+      }
     }
 
     return new DesignVersion(snapshot)
@@ -145,6 +160,16 @@ export class DesignVersion {
     return this.status === DesignVersionStatus.Applied
   }
 
+  /** Devuelve una copia para impedir que se muten fechas de una versión aplicada. */
+  get createdAt(): Date {
+    return new Date(this.createdAtMillis)
+  }
+
+  /** Devuelve una copia para impedir que se muten fechas de una versión aplicada. */
+  get appliedAt(): Date | undefined {
+    return this.appliedAtMillis === undefined ? undefined : new Date(this.appliedAtMillis)
+  }
+
   toSnapshot(): DesignVersionSnapshot {
     return {
       designVersionId: this.designVersionId,
@@ -152,10 +177,10 @@ export class DesignVersion {
       status: this.status,
       resources: this.resources.map((resource) => resource.toSnapshot()),
       authorId: this.authorId,
-      createdAt: new Date(this.createdAt),
+      createdAt: this.createdAt,
       visualReference: this.visualReference,
       versionNumber: this.versionNumber,
-      appliedAt: this.appliedAt === undefined ? undefined : new Date(this.appliedAt),
+      appliedAt: this.appliedAt,
       restoredFromVersionId: this.restoredFromVersionId,
     }
   }

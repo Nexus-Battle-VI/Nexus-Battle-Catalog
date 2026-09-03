@@ -15,29 +15,34 @@ export interface GraphicResourcePolicyRule {
 
 export type GraphicResourcePolicy = Readonly<Record<GraphicResourceType, GraphicResourcePolicyRule>>
 
+const MAX_GRAPHIC_RESOURCE_BYTES = 5 * 1024 * 1024
+
 /**
  * Política inicial de HU-37.2. Conserva el límite ya usado por ProductAsset.
  * Ampliar formatos aprobados solo exige cambiar esta política, no el modelo ni
  * sus consumidores.
  */
-export const DEFAULT_GRAPHIC_RESOURCE_POLICY: GraphicResourcePolicy = {
+export const DEFAULT_GRAPHIC_RESOURCE_POLICY: GraphicResourcePolicy = Object.freeze({
   [GraphicResourceType.PrimaryImage]: {
-    allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'],
-    maxBytes: 5 * 1024 * 1024,
+    allowedContentTypes: Object.freeze(['image/jpeg', 'image/png', 'image/webp']),
+    maxBytes: MAX_GRAPHIC_RESOURCE_BYTES,
   },
   [GraphicResourceType.Icon]: {
-    allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'],
-    maxBytes: 5 * 1024 * 1024,
+    allowedContentTypes: Object.freeze(['image/jpeg', 'image/png', 'image/webp']),
+    maxBytes: MAX_GRAPHIC_RESOURCE_BYTES,
   },
   [GraphicResourceType.Animation]: {
-    allowedContentTypes: ['image/gif', 'image/png', 'image/webp'],
-    maxBytes: 5 * 1024 * 1024,
+    // GIF queda listo para cuando HU-37.7 lo valide mediante el mismo contrato.
+    allowedContentTypes: Object.freeze(['image/gif', 'image/png', 'image/webp']),
+    maxBytes: MAX_GRAPHIC_RESOURCE_BYTES,
   },
-}
+})
 
 export interface GraphicResourceSnapshot {
   readonly type: GraphicResourceType
-  /** Referencia opaca emitida por el almacenamiento; no contiene binario. */
+  /** Identificador del asset READY emitido por HU-37.7. */
+  readonly assetId: string
+  /** URL estable de Catalog; nunca una URL firmada del proveedor. */
   readonly reference: string
   readonly contentType: string
   readonly contentLength: number
@@ -50,15 +55,18 @@ export interface GraphicResourceSnapshot {
  */
 export class GraphicResource {
   readonly type: GraphicResourceType
+  readonly assetId: string
   readonly reference: string
   readonly contentType: string
   readonly contentLength: number
 
   private constructor(snapshot: GraphicResourceSnapshot) {
     this.type = snapshot.type
+    this.assetId = snapshot.assetId
     this.reference = snapshot.reference
     this.contentType = snapshot.contentType
     this.contentLength = snapshot.contentLength
+    Object.freeze(this)
   }
 
   static create(
@@ -71,10 +79,8 @@ export class GraphicResource {
       throw new DomainError(`Tipo de recurso gráfico no soportado: "${String(input.type)}".`)
     }
 
-    const reference = input.reference.trim()
-    if (reference === '') {
-      throw new DomainError('La referencia del recurso gráfico es obligatoria.')
-    }
+    const assetId = normalizeUuid(input.assetId, 'assetId')
+    const reference = normalizeCanonicalReference(input.reference, assetId)
 
     const contentType = input.contentType.trim().toLowerCase()
     if (!rule.allowedContentTypes.includes(contentType)) {
@@ -95,6 +101,7 @@ export class GraphicResource {
 
     return new GraphicResource({
       type: input.type,
+      assetId,
       reference,
       contentType,
       contentLength: input.contentLength,
@@ -104,9 +111,39 @@ export class GraphicResource {
   toSnapshot(): GraphicResourceSnapshot {
     return {
       type: this.type,
+      assetId: this.assetId,
       reference: this.reference,
       contentType: this.contentType,
       contentLength: this.contentLength,
     }
   }
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const normalizeUuid = (raw: string, field: string): string => {
+  const value = raw.trim().toLowerCase()
+
+  if (!UUID_PATTERN.test(value)) {
+    throw new DomainError(`${field} debe ser un UUID válido.`)
+  }
+
+  return value
+}
+
+const normalizeCanonicalReference = (raw: string, assetId: string): string => {
+  let url: URL
+
+  try {
+    url = new URL(raw.trim())
+  } catch {
+    throw new DomainError('La referencia del recurso gráfico debe ser una URL canónica válida.')
+  }
+
+  const expectedPath = `/api/v1/catalog/product-assets/${assetId}/content`
+  if (url.pathname !== expectedPath || url.search !== '' || url.hash !== '') {
+    throw new DomainError('La referencia debe ser la URL canónica del asset emitida por Catalog.')
+  }
+
+  return url.toString()
 }
