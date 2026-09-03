@@ -21,6 +21,7 @@ import {
   InvalidAbilityReferenceError,
   InvalidHeroSubtypeError,
   OutboxPayloadTooLargeError,
+  ProductAssetInvalidContentError,
 } from '../../../application/errors/ApplicationError'
 import type { CanonicalProductDto } from '../../../application/dto/CanonicalProductDto'
 import type { CreateCanonicalProduct } from '../../../application/use-cases/CreateCanonicalProduct'
@@ -102,7 +103,8 @@ export class CanonicalProductsController {
     if (
       error instanceof InvalidHeroSubtypeError ||
       error instanceof HeroSubtypeBranchMismatchError ||
-      error instanceof InvalidAbilityReferenceError
+      error instanceof InvalidAbilityReferenceError ||
+      error instanceof ProductAssetInvalidContentError
     ) {
       return new UnprocessableEntityException(error.message)
     }

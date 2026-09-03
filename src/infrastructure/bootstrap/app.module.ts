@@ -11,6 +11,8 @@ import {
   type MfaEvidenceVerifierPort,
 } from '../../application/ports/MfaEvidenceVerifierPort'
 import { CanonicalProductsController } from '../../adapters/inbound/http/canonical-products.controller'
+import { AdminProductAssetsController } from '../../adapters/inbound/http/admin-product-assets.controller'
+import { CatalogProductAssetsController } from '../../adapters/inbound/http/catalog-product-assets.controller'
 import { HealthController } from '../../adapters/inbound/http/health.controller'
 import {
   ARCHIVE_PRODUCT,
@@ -20,6 +22,12 @@ import {
   LIST_PRODUCTS,
   PUBLISH_PRODUCT,
   CREATE_CANONICAL_PRODUCT,
+  CREATE_PRODUCT_ASSET_UPLOAD_INTENT,
+  FINALIZE_PRODUCT_ASSET,
+  GET_PRODUCT_ASSET_CONTENT,
+  RECONCILE_PRODUCT_ASSETS,
+  PRODUCT_ASSET_STORAGE_PORT,
+  PRODUCT_ASSET_REPOSITORY_PORT,
 } from '../../adapters/inbound/http/tokens'
 import { READINESS_CHECKS, VERSION_REPORT } from '../../adapters/inbound/http/tokens.health'
 
@@ -32,28 +40,44 @@ import {
   PublishProduct,
 } from '../../application/use-cases/ProductUseCases'
 import { CreateCanonicalProduct } from '../../application/use-cases/CreateCanonicalProduct'
+import { CreateProductAssetUploadIntent } from '../../application/use-cases/CreateProductAssetUploadIntent'
+import { FinalizeProductAsset } from '../../application/use-cases/FinalizeProductAsset'
+import { GetProductAssetContent } from '../../application/use-cases/GetProductAssetContent'
+import { ReconcileProductAssets } from '../../application/use-cases/ReconcileProductAssets'
 import { PRODUCT_REPOSITORY } from '../../application/ports/ProductRepositoryPort'
 import { CLOCK } from '../../application/ports/ClockPort'
 import type { ProductRepositoryPort } from '../../application/ports/ProductRepositoryPort'
 import type { ClockPort } from '../../application/ports/ClockPort'
+import type { ProductAssetStoragePort } from '../../application/ports/ProductAssetStoragePort'
+import type { ProductAssetRepositoryPort } from '../../application/ports/ProductAssetRepositoryPort'
 
 import { InMemoryProductRepository } from '../../adapters/outbound/persistence/InMemoryProductRepository'
 import { InMemoryCanonicalProductRepository } from '../../adapters/outbound/persistence/InMemoryCanonicalProductRepository'
 import { InMemoryProductAuditRepository } from '../../adapters/outbound/persistence/InMemoryProductAuditRepository'
 import { InMemoryProductOutboxRepository } from '../../adapters/outbound/persistence/InMemoryProductOutboxRepository'
 import { InMemoryCanonicalProductUnitOfWork } from '../../adapters/outbound/persistence/InMemoryCanonicalProductUnitOfWork'
+import { InMemoryProductAssetRepository } from '../../adapters/outbound/persistence/InMemoryProductAssetRepository'
 import { MongoProductRepository } from '../../adapters/outbound/persistence/MongoProductRepository'
 import { MongoCanonicalProductRepository } from '../../adapters/outbound/persistence/MongoCanonicalProductRepository'
 import { MongoProductAuditRepository } from '../../adapters/outbound/persistence/MongoProductAuditRepository'
 import { MongoProductOutboxRepository } from '../../adapters/outbound/persistence/MongoProductOutboxRepository'
 import { MongoCanonicalProductUnitOfWork } from '../../adapters/outbound/persistence/MongoCanonicalProductUnitOfWork'
+import { MongoProductAssetRepository } from '../../adapters/outbound/persistence/MongoProductAssetRepository'
+import { InMemoryProductAssetStorageAdapter } from '../../adapters/outbound/storage/InMemoryProductAssetStorageAdapter'
+import { S3ProductAssetStorageAdapter } from '../../adapters/outbound/storage/S3ProductAssetStorageAdapter'
 import { SystemClock } from '../../adapters/outbound/system/SystemClock'
 import { UuidGenerator } from '../../adapters/outbound/system/UuidGenerator'
 import { HeroSubtypeRegistryV1 } from '../../adapters/outbound/registry/HeroSubtypeRegistryV1'
 
 import { createMongoClient, databaseOf } from '../persistence/database'
 import { createLogger, type Logger } from '../observability/logger'
-import { AuthMode, loadConfig, PersistenceDriver, type AppConfig } from '../config/env'
+import {
+  AssetsStorageDriver,
+  AuthMode,
+  loadConfig,
+  PersistenceDriver,
+  type AppConfig,
+} from '../config/env'
 
 import { JwtAuthGuard } from '../../adapters/inbound/http/auth/jwt-auth.guard'
 import { RolesGuard } from '../../adapters/inbound/http/auth/roles.guard'
@@ -92,7 +116,13 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
  * framework.
  */
 @Module({
-  controllers: [ProductsController, CanonicalProductsController, HealthController],
+  controllers: [
+    ProductsController,
+    CanonicalProductsController,
+    AdminProductAssetsController,
+    CatalogProductAssetsController,
+    HealthController,
+  ],
   providers: [
     {
       provide: APP_CONFIG,
@@ -326,6 +356,8 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         unitOfWork: CanonicalProductUnitOfWorkPort,
         audit: ProductAuditPort,
         outbox: ProductOutboxPort,
+        productAssets: ProductAssetRepositoryPort,
+        config: AppConfig,
       ): CreateCanonicalProduct =>
         new CreateCanonicalProduct({
           products,
@@ -336,6 +368,8 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
           unitOfWork,
           audit,
           outbox,
+          productAssets,
+          assetsEnforceStrict: config.assetsEnforceStrict,
         }),
       inject: [
         CANONICAL_PRODUCT_WRITE,
@@ -346,7 +380,96 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         CANONICAL_PRODUCT_UNIT_OF_WORK,
         PRODUCT_AUDIT_PORT,
         PRODUCT_OUTBOX_PORT,
+        PRODUCT_ASSET_REPOSITORY_PORT,
+        APP_CONFIG,
       ],
+    },
+    {
+      provide: PRODUCT_ASSET_REPOSITORY_PORT,
+      useFactory: (config: AppConfig, db: Db | null): ProductAssetRepositoryPort =>
+        config.persistenceDriver === PersistenceDriver.Mongo && db !== null
+          ? new MongoProductAssetRepository(db)
+          : new InMemoryProductAssetRepository(),
+      inject: [APP_CONFIG, CATALOG_DATABASE],
+    },
+    {
+      provide: PRODUCT_ASSET_STORAGE_PORT,
+      useFactory: (config: AppConfig, logger: Logger): ProductAssetStoragePort => {
+        if (config.assetsStorageDriver === AssetsStorageDriver.S3 && config.assetsBucketName) {
+          logger.info('product_asset_storage', { driver: 's3', bucket: config.assetsBucketName })
+          return new S3ProductAssetStorageAdapter({
+            bucketName: config.assetsBucketName,
+            region: config.assetsRegion,
+          })
+        }
+        logger.info('product_asset_storage', { driver: 'memory' })
+        return new InMemoryProductAssetStorageAdapter()
+      },
+      inject: [APP_CONFIG, LOGGER],
+    },
+    {
+      provide: CREATE_PRODUCT_ASSET_UPLOAD_INTENT,
+      useFactory: (
+        storage: ProductAssetStoragePort,
+        repository: ProductAssetRepositoryPort,
+        idGenerator: IdGeneratorPort,
+        clock: ClockPort,
+        config: AppConfig,
+      ): CreateProductAssetUploadIntent =>
+        new CreateProductAssetUploadIntent({
+          storage,
+          repository,
+          idGenerator,
+          clock,
+          apiBaseUrl: config.assetsBaseUrl,
+        }),
+      inject: [
+        PRODUCT_ASSET_STORAGE_PORT,
+        PRODUCT_ASSET_REPOSITORY_PORT,
+        ID_GENERATOR,
+        CLOCK,
+        APP_CONFIG,
+      ],
+    },
+    {
+      provide: FINALIZE_PRODUCT_ASSET,
+      useFactory: (
+        storage: ProductAssetStoragePort,
+        repository: ProductAssetRepositoryPort,
+        clock: ClockPort,
+      ): FinalizeProductAsset =>
+        new FinalizeProductAsset({
+          storage,
+          repository,
+          clock,
+        }),
+      inject: [PRODUCT_ASSET_STORAGE_PORT, PRODUCT_ASSET_REPOSITORY_PORT, CLOCK],
+    },
+    {
+      provide: GET_PRODUCT_ASSET_CONTENT,
+      useFactory: (
+        storage: ProductAssetStoragePort,
+        repository: ProductAssetRepositoryPort,
+      ): GetProductAssetContent =>
+        new GetProductAssetContent({
+          storage,
+          repository,
+        }),
+      inject: [PRODUCT_ASSET_STORAGE_PORT, PRODUCT_ASSET_REPOSITORY_PORT],
+    },
+    {
+      provide: RECONCILE_PRODUCT_ASSETS,
+      useFactory: (
+        storage: ProductAssetStoragePort,
+        repository: ProductAssetRepositoryPort,
+        clock: ClockPort,
+      ): ReconcileProductAssets =>
+        new ReconcileProductAssets({
+          storage,
+          repository,
+          clock,
+        }),
+      inject: [PRODUCT_ASSET_STORAGE_PORT, PRODUCT_ASSET_REPOSITORY_PORT, CLOCK],
     },
     {
       provide: PUBLISH_PRODUCT,

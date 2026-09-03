@@ -30,6 +30,13 @@ export const PersistenceDriver = {
 
 export type PersistenceDriver = (typeof PersistenceDriver)[keyof typeof PersistenceDriver]
 
+export const AssetsStorageDriver = {
+  Memory: 'memory',
+  S3: 's3',
+} as const
+
+export type AssetsStorageDriver = (typeof AssetsStorageDriver)[keyof typeof AssetsStorageDriver]
+
 export interface AppConfig {
   readonly nodeEnv: 'development' | 'test' | 'production'
   readonly serviceName: string
@@ -53,6 +60,11 @@ export interface AppConfig {
   readonly internalServiceAuthSecret: string | null
   readonly internalServiceName: string
   readonly internalTimeoutMs: number
+  readonly assetsStorageDriver: AssetsStorageDriver
+  readonly assetsBucketName: string | null
+  readonly assetsRegion: string
+  readonly assetsBaseUrl: string
+  readonly assetsEnforceStrict: boolean
 }
 
 type RawEnv = Readonly<Record<string, string | undefined>>
@@ -182,6 +194,29 @@ export const loadConfig = (env: RawEnv): AppConfig => {
     )
   }
 
+  const assetsStorageDriver = readEnum(
+    env,
+    'ASSETS_STORAGE_DRIVER',
+    [AssetsStorageDriver.Memory, AssetsStorageDriver.S3],
+    AssetsStorageDriver.Memory,
+  )
+
+  const assetsBucketName =
+    readString(env, 'PRODUCT_ASSETS_BUCKET_NAME', readString(env, 'ASSETS_S3_BUCKET', '')) || null
+
+  if (
+    assetsStorageDriver === AssetsStorageDriver.S3 &&
+    (assetsBucketName === null || assetsBucketName === '')
+  ) {
+    throw new ConfigurationError(
+      'PRODUCT_ASSETS_BUCKET_NAME es obligatorio cuando ASSETS_STORAGE_DRIVER es "s3".',
+    )
+  }
+
+  const assetsRegion = readString(env, 'AWS_REGION', 'us-east-1')
+  const assetsBaseUrl = readString(env, 'API_BASE_URL', '').replace(/\/+$/, '')
+  const assetsEnforceStrict = readBoolean(env, 'ASSETS_ENFORCE_STRICT', false)
+
   return {
     nodeEnv,
     serviceName: readString(env, 'SERVICE_NAME', 'nexus-battle-catalog'),
@@ -206,5 +241,10 @@ export const loadConfig = (env: RawEnv): AppConfig => {
     // tiempo de espera generoso convertiria una caida de Account en una
     // interfaz congelada en lugar de un rechazo claro.
     internalTimeoutMs: readInteger(env, 'INTERNAL_TIMEOUT_MS', 3_000, 100, 30_000),
+    assetsStorageDriver,
+    assetsBucketName,
+    assetsRegion,
+    assetsBaseUrl,
+    assetsEnforceStrict,
   }
 }
