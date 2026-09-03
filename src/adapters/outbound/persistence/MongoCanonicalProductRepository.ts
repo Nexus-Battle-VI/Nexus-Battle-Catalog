@@ -1,11 +1,15 @@
-import { MongoServerError, type Collection, type Db } from 'mongodb'
+import { Long, MongoServerError, type ClientSession, type Collection, type Db } from 'mongodb'
 
 import {
   CanonicalProductAlreadyExistsError,
+  CanonicalProductConcurrencyConflictError,
   CanonicalProductIdentityAlreadyExistsError,
   CanonicalProductSkuAlreadyExistsError,
 } from '../../../application/errors/ApplicationError'
-import type { CanonicalProductRepositoryPort } from '../../../application/ports/CanonicalProductPorts'
+import type {
+  CanonicalProductRepositoryPort,
+  TransactionContext,
+} from '../../../application/ports/CanonicalProductPorts'
 import type { CanonicalProduct } from '../../../domain/entities/CanonicalProduct'
 import type { ProductId, ProductType } from '../../../domain/value-objects/canonical-product-values'
 import {
@@ -31,14 +35,37 @@ export class MongoCanonicalProductRepository implements CanonicalProductReposito
     return found !== null
   }
 
-  async create(product: CanonicalProduct): Promise<void> {
+  async create(product: CanonicalProduct, context?: TransactionContext): Promise<void> {
     const document = toCanonicalDocument(product)
 
     try {
-      // Un insert de un único documento ya es atómico en MongoDB. No se abre
-      // una transacción ni se producen auditorías/eventos laterales en #134.
-      await this.products.insertOne(document)
+      const session = context?.session ? (context.session as ClientSession) : undefined
+      await this.products.insertOne(document, { session })
     } catch (error: unknown) {
+      this.translateDuplicate(error, product)
+    }
+  }
+
+  async update(
+    product: CanonicalProduct,
+    expectedVersion: number,
+    context?: TransactionContext,
+  ): Promise<void> {
+    const document = toCanonicalDocument(product)
+    const session = context?.session ? (context.session as ClientSession) : undefined
+
+    try {
+      const result = await this.products.replaceOne(
+        { _id: product.productId.value, version: Long.fromNumber(expectedVersion) },
+        document,
+        { session },
+      )
+
+      if (result.matchedCount === 0) {
+        throw new CanonicalProductConcurrencyConflictError(product.productId.value, expectedVersion)
+      }
+    } catch (error: unknown) {
+      if (error instanceof CanonicalProductConcurrencyConflictError) throw error
       this.translateDuplicate(error, product)
     }
   }

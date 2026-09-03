@@ -400,7 +400,12 @@ describe('MongoProductRepository', () => {
         const { applied, error } = await migrateToLatest(upgradeDb)
 
         expect(error).toBeUndefined()
-        expect(applied).toEqual(['003-premium-product-validation', '004-canonical-products'])
+        expect(applied).toEqual([
+          '003-premium-product-validation',
+          '004-canonical-products',
+          '005-atomicity-audit-outbox',
+          '006-product-assets',
+        ])
         await expect(upgradeProducts.insertOne(invalidPremium)).rejects.toThrow()
       } finally {
         await upgradeDb.dropDatabase()

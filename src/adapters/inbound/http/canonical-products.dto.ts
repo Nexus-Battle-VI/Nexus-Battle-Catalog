@@ -139,4 +139,7 @@ export class CanonicalProductResponse {
 
   @ApiProperty({ format: 'date-time', readOnly: true })
   updatedAt!: string
+
+  @ApiProperty({ example: 0, readOnly: true })
+  version!: number
 }

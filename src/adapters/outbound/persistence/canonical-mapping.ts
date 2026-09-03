@@ -43,6 +43,7 @@ export interface CanonicalProductDocument {
   } | null
   readonly createdAt: Date
   readonly updatedAt: Date
+  readonly version?: Long
 }
 
 const toExactInteger = (value: Long, field: string, productId: string): number => {
@@ -99,6 +100,7 @@ export const toCanonicalDocument = (product: CanonicalProduct): CanonicalProduct
           },
     createdAt: new Date(snapshot.createdAt),
     updatedAt: new Date(snapshot.updatedAt),
+    version: toLong(snapshot.version, 'version', snapshot.productId),
   }
 }
 
@@ -136,6 +138,14 @@ export const toCanonicalSnapshot = (
         },
   createdAt: document.createdAt.toISOString(),
   updatedAt: document.updatedAt.toISOString(),
+  version:
+    document.version === undefined
+      ? 0
+      : toExactInteger(
+          Long.isLong(document.version) ? document.version : Long.fromNumber(document.version),
+          'version',
+          document._id,
+        ),
 })
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
@@ -263,6 +273,7 @@ export const toCanonicalProduct = (document: CanonicalProductDocument): Canonica
       lifecycleStatus: snapshot.lifecycleStatus,
       createdAt,
       updatedAt,
+      version: snapshot.version,
     })
 
     if (product.normalizedName !== snapshot.normalizedName) {

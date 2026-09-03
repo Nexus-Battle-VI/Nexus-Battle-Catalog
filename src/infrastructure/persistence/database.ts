@@ -4,6 +4,8 @@ import * as migration001 from '../../adapters/outbound/persistence/migrations/00
 import * as migration002 from '../../adapters/outbound/persistence/migrations/002-premium-products'
 import * as migration003 from '../../adapters/outbound/persistence/migrations/003-premium-product-validation'
 import * as migration004 from '../../adapters/outbound/persistence/migrations/004-canonical-products'
+import * as migration005 from '../../adapters/outbound/persistence/migrations/005-atomicity-audit-outbox'
+import * as migration006 from '../../adapters/outbound/persistence/migrations/006-product-assets'
 
 export interface DatabaseOptions {
   readonly uri: string
@@ -57,6 +59,8 @@ const MIGRATIONS: readonly { readonly name: string; readonly up: (db: Db) => Pro
   { name: '002-premium-products', up: migration002.up },
   { name: '003-premium-product-validation', up: migration003.up },
   { name: '004-canonical-products', up: migration004.up },
+  { name: '005-atomicity-audit-outbox', up: migration005.up },
+  { name: '006-product-assets', up: migration006.up },
 ]
 
 const REGISTRY = '_migrations'

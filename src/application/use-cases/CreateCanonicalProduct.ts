@@ -30,14 +30,24 @@ import {
   HeroSubtypeBranchMismatchError,
   InvalidAbilityReferenceError,
   InvalidHeroSubtypeError,
+  OutboxPayloadTooLargeError,
+  ProductAssetInvalidContentError,
 } from '../errors/ApplicationError'
 import type { ClockPort } from '../ports/ClockPort'
 import type { IdGeneratorPort } from '../ports/IdGeneratorPort'
+import type { ProductAssetRepositoryPort } from '../ports/ProductAssetRepositoryPort'
 import {
   HeroCombatBranch,
+  OutboxStatus,
+  type AuditActor,
+  type CanonicalProductUnitOfWorkPort,
   type CanonicalProductWritePort,
   type HeroSubtypeDefinition,
   type HeroSubtypeRegistryPort,
+  type OutboxEntry,
+  type ProductAuditEntry,
+  type ProductAuditPort,
+  type ProductOutboxPort,
   type ProductReferenceQueryPort,
 } from '../ports/CanonicalProductPorts'
 import { ProductIdFactory } from '../services/ProductIdFactory'
@@ -48,6 +58,11 @@ export interface CreateCanonicalProductDependencies {
   readonly productReferences: ProductReferenceQueryPort
   readonly idGenerator: IdGeneratorPort
   readonly clock: ClockPort
+  readonly unitOfWork?: CanonicalProductUnitOfWorkPort
+  readonly audit?: ProductAuditPort
+  readonly outbox?: ProductOutboxPort
+  readonly productAssets?: ProductAssetRepositoryPort
+  readonly assetsEnforceStrict?: boolean
 }
 
 interface ParsedCreateCommand {
@@ -61,11 +76,11 @@ interface ParsedCreateCommand {
   readonly pricing: ProductPricing
 }
 
-/** Caso de uso canónico; no conoce HTTP, NestJS, MongoDB ni transporte. */
+/** Caso de uso canónico; coordina persistencia, auditoría inmutable y outbox (ADR-015). */
 export class CreateCanonicalProduct {
   constructor(private readonly deps: CreateCanonicalProductDependencies) {}
 
-  async execute(rawCommand: unknown): Promise<CanonicalProductDto> {
+  async execute(rawCommand: unknown, actor?: AuditActor): Promise<CanonicalProductDto> {
     const command = parseCreateCommand(rawCommand)
     const normalizedName = normalizeProductName(command.name.value)
 
@@ -74,8 +89,11 @@ export class CreateCanonicalProduct {
     }
 
     await this.validateReferences(command.attributes)
+    const referencedAssetId = await this.validateImageAsset(command.imageUrl)
 
+    const now = this.deps.clock.now()
     const productId = new ProductIdFactory(this.deps.idGenerator).create()
+    const eventId = this.deps.idGenerator.generate()
     const product = CanonicalProduct.create({
       productId,
       sku: command.sku ?? generateCanonicalSku(command.name, productId),
@@ -86,11 +104,62 @@ export class CreateCanonicalProduct {
       attributes: command.attributes,
       printRun: command.printRun,
       pricing: command.pricing,
-      createdAt: this.deps.clock.now(),
+      createdAt: now,
     })
 
-    await this.deps.products.create(product)
-    return toCanonicalProductDto(product.toSnapshot())
+    const snapshot = product.toSnapshot()
+    const dto = toCanonicalProductDto(snapshot)
+
+    const auditEntry: ProductAuditEntry = {
+      eventId,
+      aggregateId: productId.value,
+      aggregateType: 'CanonicalProduct',
+      action: 'PRODUCT_CREATED',
+      actor: actor ?? { subject: 'anonymous' },
+      timestamp: now,
+      snapshot,
+    }
+
+    const payload = dto as unknown as Record<string, unknown>
+    const payloadBytes = Buffer.byteLength(JSON.stringify(payload), 'utf8')
+    if (payloadBytes > 256 * 1024) {
+      throw new OutboxPayloadTooLargeError(payloadBytes)
+    }
+
+    const outboxEntry: OutboxEntry = {
+      eventId,
+      aggregateId: productId.value,
+      aggregateType: 'CanonicalProduct',
+      eventType: 'catalog.product.created',
+      eventVersion: 1,
+      status: OutboxStatus.Pending,
+      payload,
+      createdAt: now,
+      updatedAt: now,
+      leaseExpiresAt: null,
+      attempts: 0,
+      lastError: null,
+      dispatchedAt: null,
+      purgeAt: null,
+    }
+
+    if (this.deps.unitOfWork) {
+      await this.deps.unitOfWork.executeTransaction(async (tx) => {
+        await this.deps.products.create(product, tx)
+        if (this.deps.audit) await this.deps.audit.record(auditEntry, tx)
+        if (this.deps.outbox) await this.deps.outbox.record(outboxEntry, tx)
+      })
+    } else {
+      await this.deps.products.create(product)
+      if (this.deps.audit) await this.deps.audit.record(auditEntry)
+      if (this.deps.outbox) await this.deps.outbox.record(outboxEntry)
+    }
+
+    if (referencedAssetId && this.deps.productAssets) {
+      await this.deps.productAssets.associateProduct(referencedAssetId, productId.value)
+    }
+
+    return dto
   }
 
   private async validateReferences(attributes: ProductAttributes): Promise<void> {
@@ -141,6 +210,33 @@ export class CreateCanonicalProduct {
     if (definition.combatBranch !== expectedBranch) {
       throw new HeroSubtypeBranchMismatchError(definition.code, expectedBranch)
     }
+  }
+
+  private async validateImageAsset(imageUrl: ProductImageUrl): Promise<string | null> {
+    const assetRegex =
+      /\/api\/v1\/catalog\/product-assets\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/content/i
+    const match = assetRegex.exec(imageUrl.value)
+
+    if (match?.[1]) {
+      const assetId = match[1]
+      if (this.deps.productAssets) {
+        const asset = await this.deps.productAssets.findById(assetId)
+        if (!asset?.isReady()) {
+          throw new ProductAssetInvalidContentError(
+            `El recurso visual "${assetId}" referenciado en imageUrl no existe o no ha sido finalizado con exito.`,
+          )
+        }
+      }
+      return assetId
+    }
+
+    if (this.deps.assetsEnforceStrict) {
+      throw new ProductAssetInvalidContentError(
+        'Solo se admiten URLs de recursos visuales gestionados en /api/v1/catalog/product-assets/{assetId}/content.',
+      )
+    }
+
+    return null
   }
 }
 
