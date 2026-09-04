@@ -21,11 +21,21 @@ import {
 } from '../../../application/errors/ApplicationError'
 import type { CanonicalProductDto } from '../../../application/dto/CanonicalProductDto'
 import type { AdjustProductInventory } from '../../../application/use-cases/AdjustProductInventory'
+import type { ConfigureProductPremium } from '../../../application/use-cases/ConfigureProductPremium'
 import type { GetCanonicalProduct } from '../../../application/use-cases/GetCanonicalProduct'
 import { Role, type VerifiedIdentity } from '../../../application/ports/TokenVerifierPort'
-import { ADJUST_PRODUCT_INVENTORY, GET_CANONICAL_PRODUCT } from './tokens'
+import type { AuditActor } from '../../../application/ports/CanonicalProductPorts'
+import {
+  ADJUST_PRODUCT_INVENTORY,
+  CONFIGURE_PRODUCT_PREMIUM,
+  GET_CANONICAL_PRODUCT,
+} from './tokens'
 import { CurrentIdentity, RequiresMfaEvidence, Roles } from './auth/decorators'
-import { AdjustInventoryRequest, CanonicalProductResponse } from './admin-products.dto'
+import {
+  AdjustInventoryRequest,
+  CanonicalProductResponse,
+  ConfigurePremiumRequest,
+} from './admin-products.dto'
 
 /**
  * Ajuste administrativo del tiraje (HU-34, CA-02).
@@ -41,6 +51,8 @@ export class AdminProductsController {
   constructor(
     @Inject(ADJUST_PRODUCT_INVENTORY)
     private readonly adjustProductInventory: AdjustProductInventory,
+    @Inject(CONFIGURE_PRODUCT_PREMIUM)
+    private readonly configureProductPremium: ConfigureProductPremium,
     @Inject(GET_CANONICAL_PRODUCT)
     private readonly getCanonicalProduct: GetCanonicalProduct,
   ) {}
@@ -91,23 +103,68 @@ export class AdminProductsController {
     @CurrentIdentity() identity: VerifiedIdentity,
   ): Promise<CanonicalProductDto> {
     try {
-      const actor = {
-        subject: identity.subject,
-        // Se OMITEN las claves ausentes en lugar de escribirlas como
-        // `undefined`: el controlador de MongoDB serializa `undefined` como
-        // null y el validador de `audit_log` exige texto. Un testimonio de
-        // acceso de Cognito no lleva `email`.
-        ...(identity.email === null ? {} : { email: identity.email }),
-        ...(() => {
-          const rol = [...identity.roles][0]
-
-          return rol === undefined ? {} : { role: rol }
-        })(),
-      }
-
-      return await this.adjustProductInventory.execute(id, body, actor)
+      return await this.adjustProductInventory.execute(
+        id,
+        body,
+        AdminProductsController.buildActor(identity),
+      )
     } catch (error: unknown) {
       throw AdminProductsController.translate(error)
+    }
+  }
+
+  @Patch(':id/premium')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.Administrator)
+  @RequiresMfaEvidence()
+  @ApiOperation({
+    operationId: 'configureCatalogProductPremiumV1',
+    summary: 'Activa o actualiza la condicion premium y el precio en moneda real de un producto',
+  })
+  @ApiParam({ name: 'id', description: 'Identificador del producto canonico' })
+  @ApiResponse({ status: 200, description: 'Premium configurado', type: CanonicalProductResponse })
+  @ApiResponse({ status: 400, description: 'Cuerpo o campos no declarados invalidos' })
+  @ApiResponse({ status: 401, description: 'Testimonio ausente, invalido o vencido' })
+  @ApiResponse({ status: 403, description: 'Rol no autorizado o segundo factor ausente' })
+  @ApiResponse({ status: 404, description: 'El producto no existe' })
+  @ApiResponse({ status: 409, description: 'Otro ajuste modifico el producto entre medias' })
+  @ApiResponse({
+    status: 422,
+    description:
+      'Precio en moneda real invalido para la condicion premium solicitada, o intento de retirar premium (no soportado todavia)',
+  })
+  @ApiResponse({ status: 503, description: 'No se pudo comprobar el segundo factor' })
+  async configurePremium(
+    @Param('id') id: string,
+    @Body() body: ConfigurePremiumRequest,
+    @CurrentIdentity() identity: VerifiedIdentity,
+  ): Promise<CanonicalProductDto> {
+    try {
+      return await this.configureProductPremium.execute(
+        id,
+        body,
+        AdminProductsController.buildActor(identity),
+      )
+    } catch (error: unknown) {
+      throw AdminProductsController.translate(error)
+    }
+  }
+
+  /**
+   * Se OMITEN las claves ausentes en lugar de escribirlas como `undefined`: el
+   * controlador de MongoDB serializa `undefined` como null y el validador de
+   * `audit_log` exige texto. Un testimonio de acceso de Cognito no lleva
+   * `email`.
+   */
+  private static buildActor(identity: VerifiedIdentity): AuditActor {
+    return {
+      subject: identity.subject,
+      ...(identity.email === null ? {} : { email: identity.email }),
+      ...(() => {
+        const rol = [...identity.roles][0]
+
+        return rol === undefined ? {} : { role: rol }
+      })(),
     }
   }
 

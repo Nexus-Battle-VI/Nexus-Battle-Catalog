@@ -1,5 +1,8 @@
-import { ApiProperty } from '@nestjs/swagger'
-import { IsInt } from 'class-validator'
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
+import { IsBoolean, IsInt, ValidateIf, ValidateNested } from 'class-validator'
+import { Type } from 'class-transformer'
+
+import { RealMoneyPriceRequest } from './canonical-products.dto'
 
 export { CanonicalProductResponse } from './canonical-products.dto'
 
@@ -25,4 +28,31 @@ export class AdjustInventoryRequest {
   })
   @IsInt()
   printRun!: number
+}
+
+/**
+ * Cuerpo de la configuracion premium (HU-36, CA-01/CA-02).
+ *
+ * `@IsBoolean()` y la forma anidada de `realMoneyPrice` son las UNICAS
+ * comprobaciones de aqui: que premium exija un precio real positivo, o que un
+ * producto no premium no lo admita, son reglas de negocio y viven en el
+ * dominio (`ProductPricing`), que responde 422.
+ *
+ * Retirar premium (premium=false sobre un producto ya premium) tambien
+ * responde 422: la transicion no esta soportada todavia (HU-36.6, sin
+ * resolver). Vease `CanonicalProduct.configurePremium`.
+ */
+export class ConfigurePremiumRequest {
+  @ApiProperty({ description: 'Si es true, realMoneyPrice es obligatorio.' })
+  @IsBoolean()
+  premium!: boolean
+
+  @ApiPropertyOptional({ type: RealMoneyPriceRequest, nullable: true })
+  @ValidateIf(
+    (request: ConfigurePremiumRequest) =>
+      request.realMoneyPrice !== undefined && request.realMoneyPrice !== null,
+  )
+  @ValidateNested()
+  @Type(() => RealMoneyPriceRequest)
+  realMoneyPrice?: RealMoneyPriceRequest | null
 }

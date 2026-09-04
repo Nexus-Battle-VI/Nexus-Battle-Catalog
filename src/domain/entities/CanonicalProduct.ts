@@ -231,6 +231,54 @@ export class CanonicalProduct {
     return this.copyWith(printRun, printRun.value - entregadas, at)
   }
 
+  /**
+   * Activa o actualiza la condicion premium y su precio en moneda real (HU-36).
+   *
+   * `pricing` ya trae la invariante de `ProductPricing` resuelta (premium
+   * exige precio real positivo; no premium no admite precio real). El
+   * creditsPrice de `pricing` se ignora a proposito: esta operacion es sobre
+   * la condicion premium, no sobre el precio en creditos.
+   *
+   * RETIRAR premium (pasar de `true` a `false`) NO esta soportado todavia: esa
+   * transicion exige saber si el producto ya tuvo una compra en moneda real, y
+   * esa informacion vive en Commerce, no en Catalog (HU-36.6, sin resolver
+   * todavia). Un campo local que nunca pudiera pasar a `true` seria peor que
+   * no tener la regla -aparentaria protegerla y en realidad permitiria retirar
+   * premium siempre-, asi que se rechaza la transicion completa en vez de
+   * simularla a medias con un dato que nadie puede escribir aun.
+   */
+  configurePremium(pricing: ProductPricing, at: Date): CanonicalProduct {
+    if (this.premium && !pricing.premium) {
+      throw new DomainError(
+        'Retirar la condicion premium no esta soportado todavia: requiere resolver primero la verificacion de compras en moneda real (HU-36.6).',
+      )
+    }
+
+    return new CanonicalProduct({
+      productId: this.productId,
+      sku: this.sku,
+      name: this.name,
+      imageUrl: this.imageUrl,
+      description: this.description,
+      type: this.type,
+      attributes: this.attributes,
+      printRun: this.printRun,
+      availableUnits: this.availableUnits,
+      pricing: {
+        creditsPrice: this.creditsPrice,
+        premium: pricing.premium,
+        realMoneyPrice: pricing.realMoneyPrice,
+      },
+      lifecycleStatus: this.lifecycleStatus,
+      createdAt: this.createdAt,
+      updatedAt: at,
+      // La version AVANZA, por la misma razon que en `adjustPrintRun`: sin
+      // avanzar, dos configuraciones simultaneas leerian la misma version y la
+      // segunda pisaria a la primera sin que nada lo notara.
+      version: this.version + 1,
+    })
+  }
+
   private copyWith(printRun: PrintRun, availableUnits: number | null, at: Date): CanonicalProduct {
     return new CanonicalProduct({
       productId: this.productId,

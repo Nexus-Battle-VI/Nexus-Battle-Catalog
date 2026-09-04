@@ -13,8 +13,10 @@ import {
 import { CanonicalProductsController } from '../../adapters/inbound/http/canonical-products.controller'
 import { AdminProductsController } from '../../adapters/inbound/http/admin-products.controller'
 import { InternalProductAcquisitionsController } from '../../adapters/inbound/http/internal-product-acquisitions.controller'
+import { InternalProductPremiumStatusController } from '../../adapters/inbound/http/internal-product-premium-status.controller'
 import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
 import { AdjustProductInventory } from '../../application/use-cases/AdjustProductInventory'
+import { ConfigureProductPremium } from '../../application/use-cases/ConfigureProductPremium'
 import { GetCanonicalProduct } from '../../application/use-cases/GetCanonicalProduct'
 import { AcquireProductUnit } from '../../application/use-cases/AcquireProductUnit'
 import { ListCatalogStorefront } from '../../application/use-cases/ListCatalogStorefront'
@@ -43,6 +45,7 @@ import {
   GET_CANONICAL_PRODUCT_BY_REFERENCE,
   LOOKUP_CANONICAL_PRODUCTS,
   ADJUST_PRODUCT_INVENTORY,
+  CONFIGURE_PRODUCT_PREMIUM,
   GET_CANONICAL_PRODUCT,
   ACQUIRE_PRODUCT_UNIT,
   CREATE_PRODUCT_ASSET_UPLOAD_INTENT,
@@ -152,6 +155,7 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
     CanonicalProductsController,
     AdminProductsController,
     InternalProductAcquisitionsController,
+    InternalProductPremiumStatusController,
     InternalStockReservationsController,
     AdminProductAssetsController,
     CatalogProductAssetsController,
@@ -454,6 +458,26 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         outbox: ProductOutboxPort,
       ): AdjustProductInventory =>
         new AdjustProductInventory({ products, clock, idGenerator, unitOfWork, audit, outbox }),
+      inject: [
+        CANONICAL_PRODUCT_WRITE,
+        CLOCK,
+        ID_GENERATOR,
+        CANONICAL_PRODUCT_UNIT_OF_WORK,
+        PRODUCT_AUDIT_PORT,
+        PRODUCT_OUTBOX_PORT,
+      ],
+    },
+    {
+      provide: CONFIGURE_PRODUCT_PREMIUM,
+      useFactory: (
+        products: CanonicalProductRepositoryPort,
+        clock: ClockPort,
+        idGenerator: IdGeneratorPort,
+        unitOfWork: CanonicalProductUnitOfWorkPort,
+        audit: ProductAuditPort,
+        outbox: ProductOutboxPort,
+      ): ConfigureProductPremium =>
+        new ConfigureProductPremium({ products, clock, idGenerator, unitOfWork, audit, outbox }),
       inject: [
         CANONICAL_PRODUCT_WRITE,
         CLOCK,
