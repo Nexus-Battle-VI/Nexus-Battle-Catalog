@@ -61,6 +61,8 @@ export const catalogFixture = (
     lifecycleStatus: options.suspended ? LifecycleStatus.Suspended : LifecycleStatus.Active,
     createdAt: new Date('2026-09-03T00:00:00Z'),
     updatedAt: new Date('2026-09-03T00:00:00Z'),
+    averageRating: null,
+    reviewCount: 0,
     version: 0,
   })
 }

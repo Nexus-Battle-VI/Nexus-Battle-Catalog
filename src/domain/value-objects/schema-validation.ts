@@ -79,6 +79,26 @@ export const parseInteger = (
   return value
 }
 
+export const parseNumber = (
+  value: unknown,
+  path: string,
+  options: { minimum?: number; maximum?: number } = {},
+): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new DomainError(`${path} debe ser un numero.`)
+  }
+
+  if (options.minimum !== undefined && value < options.minimum) {
+    throw new DomainError(`${path} debe ser mayor o igual a ${String(options.minimum)}.`)
+  }
+
+  if (options.maximum !== undefined && value > options.maximum) {
+    throw new DomainError(`${path} debe ser menor o igual a ${String(options.maximum)}.`)
+  }
+
+  return value
+}
+
 export const parseBoolean = (value: unknown, path: string): boolean => {
   if (typeof value !== 'boolean') {
     throw new DomainError(`${path} debe ser booleano.`)

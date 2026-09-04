@@ -202,4 +202,20 @@ export class InMemoryCanonicalProductRepository
       depleted: consumido.isSoldOut,
     })
   }
+
+  /** Mismo comportamiento que la version de Mongo, sin condicion real: un solo proceso. */
+  updateRating(
+    productId: ProductId,
+    rating: { averageRating: number | null; reviewCount: number },
+    at: Date,
+  ): Promise<boolean> {
+    const current = this.byId.get(productId.value)
+
+    if (current === undefined) {
+      return Promise.resolve(false)
+    }
+
+    this.byId.set(productId.value, current.withRating(rating, at))
+    return Promise.resolve(true)
+  }
 }

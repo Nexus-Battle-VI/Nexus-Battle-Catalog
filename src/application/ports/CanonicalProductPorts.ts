@@ -87,6 +87,26 @@ export interface CanonicalProductWritePort {
     productId: ProductId,
     context?: TransactionContext,
   ): Promise<AvailabilityDecrement | null>
+
+  /**
+   * Aplica el agregado de calificaciones ya calculado (HU-40, CA-03).
+   *
+   * ES UNA ESCRITURA ABSOLUTA, no un incremento: quien llama -Community- ya
+   * calculo el promedio y el conteo finales, asi que reintentar la misma
+   * llamada dos veces dos veces produce el mismo resultado sin doble conteo.
+   * Por eso no hace falta control de concurrencia optimista aqui: dos
+   * llamadas sucesivas para el mismo producto solo dejan el ultimo valor
+   * escrito, que es exactamente lo que Community espera que pase.
+   *
+   * Devuelve `false` cuando el producto no existe -quien llama traduce eso a
+   * 404-.
+   */
+  updateRating(
+    productId: ProductId,
+    rating: { averageRating: number | null; reviewCount: number },
+    at: Date,
+    context?: TransactionContext,
+  ): Promise<boolean>
 }
 
 /** Almacén canónico completo durante la transición aditiva de ADR-013. */

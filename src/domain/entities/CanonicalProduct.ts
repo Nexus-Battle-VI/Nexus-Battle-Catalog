@@ -14,6 +14,36 @@ import type { Money, ProductName, Sku } from '../value-objects/catalog-values'
 import { DomainError } from '../errors/DomainError'
 
 /**
+ * Comprueba que el promedio y el numero de calificaciones digan lo mismo
+ * (HU-40, CA-03): sin calificaciones el promedio es `null`, y con al menos una
+ * es un numero entre 1 y 5. Community es quien calcula ambos valores; esta
+ * comprobacion es la misma defensa en profundidad que `assertAvailability`
+ * aplica a la disponibilidad -la invariante se verifica aqui ADEMAS de en el
+ * validador de MongoDB-.
+ */
+export const assertRatingAggregate = (averageRating: number | null, reviewCount: number): void => {
+  if (!Number.isInteger(reviewCount) || reviewCount < 0) {
+    throw new DomainError(
+      `El numero de calificaciones debe ser un entero no negativo. Se recibio ${String(reviewCount)}.`,
+    )
+  }
+
+  if (reviewCount === 0) {
+    if (averageRating !== null) {
+      throw new DomainError('Un producto sin calificaciones no lleva promedio.')
+    }
+
+    return
+  }
+
+  if (averageRating === null || averageRating < 1 || averageRating > 5) {
+    throw new DomainError(
+      `Un producto con calificaciones necesita un promedio entre 1 y 5. Se recibio ${String(averageRating)}.`,
+    )
+  }
+}
+
+/**
  * Comprueba que la disponibilidad y el tiraje digan lo mismo.
  *
  * Tiraje infinito exige `null`; cualquier otro modo exige un entero entre 0 y
@@ -69,6 +99,12 @@ export interface CanonicalProductSnapshot {
   readonly creditsPrice: number
   readonly premium: boolean
   readonly realMoneyPrice: { readonly amount: number; readonly currency: string } | null
+  /**
+   * Promedio de calificaciones (HU-40, CA-03). `null` sin calificaciones
+   * todavia. Lo calcula y lo empuja Community; Catalog solo lo conserva.
+   */
+  readonly averageRating: number | null
+  readonly reviewCount: number
   readonly createdAt: string
   readonly updatedAt: string
   readonly version: number
@@ -90,6 +126,8 @@ export class CanonicalProduct {
   readonly creditsPrice: CreditsPrice
   readonly premium: boolean
   readonly realMoneyPrice: Money | null
+  readonly averageRating: number | null
+  readonly reviewCount: number
   readonly createdAt: Date
   readonly updatedAt: Date
   readonly version: number
@@ -108,6 +146,8 @@ export class CanonicalProduct {
     createdAt: Date
     lifecycleStatus: LifecycleStatus
     updatedAt: Date
+    averageRating: number | null
+    reviewCount: number
     version?: number
   }) {
     this.productId = params.productId
@@ -130,6 +170,9 @@ export class CanonicalProduct {
     this.premium = params.pricing.premium
     this.realMoneyPrice = params.pricing.realMoneyPrice
     this.lifecycleStatus = params.lifecycleStatus
+    assertRatingAggregate(params.averageRating, params.reviewCount)
+    this.averageRating = params.averageRating
+    this.reviewCount = params.reviewCount
     this.createdAt = new Date(params.createdAt)
     this.updatedAt = new Date(params.updatedAt)
     this.version = params.version ?? 0
@@ -154,6 +197,10 @@ export class CanonicalProduct {
       availableUnits: params.printRun.isInfinite ? null : params.printRun.value,
       lifecycleStatus: LifecycleStatus.Active,
       updatedAt: params.createdAt,
+      // Un producto nace sin calificaciones (HU-40): las empuja Community
+      // cuando exista la primera.
+      averageRating: null,
+      reviewCount: 0,
       version: 0,
     })
   }
@@ -172,6 +219,8 @@ export class CanonicalProduct {
     lifecycleStatus: LifecycleStatus
     createdAt: Date
     updatedAt: Date
+    averageRating: number | null
+    reviewCount: number
     version?: number
   }): CanonicalProduct {
     return new CanonicalProduct(params)
@@ -272,6 +321,10 @@ export class CanonicalProduct {
       lifecycleStatus: this.lifecycleStatus,
       createdAt: this.createdAt,
       updatedAt: at,
+      // Esta operacion es sobre premium, no sobre calificaciones: se
+      // conservan intactas, igual que `copyWith` cuando no recibe `rating`.
+      averageRating: this.averageRating,
+      reviewCount: this.reviewCount,
       // La version AVANZA, por la misma razon que en `adjustPrintRun`: sin
       // avanzar, dos configuraciones simultaneas leerian la misma version y la
       // segunda pisaria a la primera sin que nada lo notara.
@@ -279,7 +332,12 @@ export class CanonicalProduct {
     })
   }
 
-  private copyWith(printRun: PrintRun, availableUnits: number | null, at: Date): CanonicalProduct {
+  private copyWith(
+    printRun: PrintRun,
+    availableUnits: number | null,
+    at: Date,
+    rating?: { averageRating: number | null; reviewCount: number },
+  ): CanonicalProduct {
     return new CanonicalProduct({
       productId: this.productId,
       sku: this.sku,
@@ -298,11 +356,28 @@ export class CanonicalProduct {
       lifecycleStatus: this.lifecycleStatus,
       createdAt: this.createdAt,
       updatedAt: at,
+      averageRating: rating?.averageRating ?? this.averageRating,
+      reviewCount: rating?.reviewCount ?? this.reviewCount,
       // La version AVANZA. Escribir un cambio conservandola dejaria la
       // concurrencia optimista sin efecto: dos ajustes simultaneos leerian la
       // misma version, y el segundo pisaria al primero sin que nada lo notara.
       version: this.version + 1,
     })
+  }
+
+  /**
+   * Actualiza el agregado de calificaciones (HU-40, CA-03).
+   *
+   * DEVUELVE UN AGREGADO NUEVO, igual que `adjustPrintRun`. Quien calcula el
+   * promedio y el conteo es Community, dueña de las calificaciones; este
+   * metodo solo aplica el valor ya calculado y conserva la invariante -sin
+   * calificaciones, sin promedio- en el lado de Catalog.
+   */
+  withRating(
+    rating: { averageRating: number | null; reviewCount: number },
+    at: Date,
+  ): CanonicalProduct {
+    return this.copyWith(this.printRun, this.availableUnits, at, rating)
   }
 
   /**
@@ -365,6 +440,8 @@ export class CanonicalProduct {
         this.realMoneyPrice === null
           ? null
           : { amount: this.realMoneyPrice.amount, currency: this.realMoneyPrice.currency },
+      averageRating: this.averageRating,
+      reviewCount: this.reviewCount,
       createdAt: this.createdAt.toISOString(),
       updatedAt: this.updatedAt.toISOString(),
       version: this.version,
