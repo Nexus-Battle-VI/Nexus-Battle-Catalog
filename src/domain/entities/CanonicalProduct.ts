@@ -105,6 +105,13 @@ export interface CanonicalProductSnapshot {
    */
   readonly averageRating: number | null
   readonly reviewCount: number
+  /**
+   * Cierto si el producto tuvo al menos una compra en moneda real (HU-36,
+   * CA-03). Lo empuja Commerce -dueño de las transacciones- via el contrato
+   * interno de HU-36.6; Catalog no calcula esto, solo lo conserva para poder
+   * bloquear el retiro de la condicion premium.
+   */
+  readonly hasRealMoneyPurchase: boolean
   readonly createdAt: string
   readonly updatedAt: string
   readonly version: number
@@ -128,6 +135,7 @@ export class CanonicalProduct {
   readonly realMoneyPrice: Money | null
   readonly averageRating: number | null
   readonly reviewCount: number
+  readonly hasRealMoneyPurchase: boolean
   readonly createdAt: Date
   readonly updatedAt: Date
   readonly version: number
@@ -148,6 +156,7 @@ export class CanonicalProduct {
     updatedAt: Date
     averageRating: number | null
     reviewCount: number
+    hasRealMoneyPurchase: boolean
     version?: number
   }) {
     this.productId = params.productId
@@ -173,6 +182,7 @@ export class CanonicalProduct {
     assertRatingAggregate(params.averageRating, params.reviewCount)
     this.averageRating = params.averageRating
     this.reviewCount = params.reviewCount
+    this.hasRealMoneyPurchase = params.hasRealMoneyPurchase
     this.createdAt = new Date(params.createdAt)
     this.updatedAt = new Date(params.updatedAt)
     this.version = params.version ?? 0
@@ -201,6 +211,8 @@ export class CanonicalProduct {
       // cuando exista la primera.
       averageRating: null,
       reviewCount: 0,
+      // Un producto nace sin compras: nadie pudo haberlo comprado todavia.
+      hasRealMoneyPurchase: false,
       version: 0,
     })
   }
@@ -221,6 +233,7 @@ export class CanonicalProduct {
     updatedAt: Date
     averageRating: number | null
     reviewCount: number
+    hasRealMoneyPurchase: boolean
     version?: number
   }): CanonicalProduct {
     return new CanonicalProduct(params)
@@ -288,18 +301,20 @@ export class CanonicalProduct {
    * creditsPrice de `pricing` se ignora a proposito: esta operacion es sobre
    * la condicion premium, no sobre el precio en creditos.
    *
-   * RETIRAR premium (pasar de `true` a `false`) NO esta soportado todavia: esa
-   * transicion exige saber si el producto ya tuvo una compra en moneda real, y
-   * esa informacion vive en Commerce, no en Catalog (HU-36.6, sin resolver
-   * todavia). Un campo local que nunca pudiera pasar a `true` seria peor que
-   * no tener la regla -aparentaria protegerla y en realidad permitiria retirar
-   * premium siempre-, asi que se rechaza la transicion completa en vez de
-   * simularla a medias con un dato que nadie puede escribir aun.
+   * RETIRAR premium (pasar de `true` a `false`) solo se rechaza cuando
+   * `hasRealMoneyPurchase` es cierto (HU-36, CA-03): ese dato lo empuja
+   * Commerce via el contrato interno de HU-36.6, asi que ya vive en este
+   * agregado y la invariante se puede sostener aqui. ESTA COMPROBACION SE
+   * REPITE en `ConfigureProductPremium` -donde el error se traduce a 409 en
+   * vez de al generico 422 que produce este `DomainError`-, siguiendo el mismo
+   * criterio de defensa en profundidad que `assertAvailability` documenta:
+   * el dominio protege su propia invariante incluso si alguien lo invoca sin
+   * pasar por el caso de uso.
    */
   configurePremium(pricing: ProductPricing, at: Date): CanonicalProduct {
-    if (this.premium && !pricing.premium) {
+    if (this.premium && !pricing.premium && this.hasRealMoneyPurchase) {
       throw new DomainError(
-        'Retirar la condicion premium no esta soportado todavia: requiere resolver primero la verificacion de compras en moneda real (HU-36.6).',
+        'No es posible retirar la condicion premium de un producto con compras en moneda real ya registradas.',
       )
     }
 
@@ -321,10 +336,11 @@ export class CanonicalProduct {
       lifecycleStatus: this.lifecycleStatus,
       createdAt: this.createdAt,
       updatedAt: at,
-      // Esta operacion es sobre premium, no sobre calificaciones: se
-      // conservan intactas, igual que `copyWith` cuando no recibe `rating`.
+      // Esta operacion es sobre premium, no sobre calificaciones ni compras:
+      // se conservan intactas, igual que `copyWith` cuando no recibe `rating`.
       averageRating: this.averageRating,
       reviewCount: this.reviewCount,
+      hasRealMoneyPurchase: this.hasRealMoneyPurchase,
       // La version AVANZA, por la misma razon que en `adjustPrintRun`: sin
       // avanzar, dos configuraciones simultaneas leerian la misma version y la
       // segunda pisaria a la primera sin que nada lo notara.
@@ -338,6 +354,7 @@ export class CanonicalProduct {
     at: Date,
     rating?: { averageRating: number | null; reviewCount: number },
     lifecycleStatus?: LifecycleStatus,
+    hasRealMoneyPurchase?: boolean,
   ): CanonicalProduct {
     return new CanonicalProduct({
       productId: this.productId,
@@ -359,6 +376,7 @@ export class CanonicalProduct {
       updatedAt: at,
       averageRating: rating?.averageRating ?? this.averageRating,
       reviewCount: rating?.reviewCount ?? this.reviewCount,
+      hasRealMoneyPurchase: hasRealMoneyPurchase ?? this.hasRealMoneyPurchase,
       // La version AVANZA. Escribir un cambio conservandola dejaria la
       // concurrencia optimista sin efecto: dos ajustes simultaneos leerian la
       // misma version, y el segundo pisaria al primero sin que nada lo notara.
@@ -427,6 +445,19 @@ export class CanonicalProduct {
   }
 
   /**
+   * Registra que el producto tuvo una compra en moneda real (HU-36, CA-03).
+   *
+   * MISMO CRITERIO QUE `withRating`: es una escritura ABSOLUTA que empuja
+   * Commerce, no un calculo de este agregado. No se comprueba si ya estaba en
+   * `true` porque no hace falta -escribir `true` sobre `true` es exactamente
+   * el mismo resultado, sin efecto observable distinto salvo el avance de
+   * `version`, igual que un reintento de `updateRating` con el mismo valor.
+   */
+  withRealMoneyPurchase(at: Date): CanonicalProduct {
+    return this.copyWith(this.printRun, this.availableUnits, at, undefined, undefined, true)
+  }
+
+  /**
    * Consume una unidad.
    *
    * En tiraje infinito devuelve el mismo agregado, sin cambio alguno: CA-03
@@ -488,6 +519,7 @@ export class CanonicalProduct {
           : { amount: this.realMoneyPrice.amount, currency: this.realMoneyPrice.currency },
       averageRating: this.averageRating,
       reviewCount: this.reviewCount,
+      hasRealMoneyPurchase: this.hasRealMoneyPurchase,
       createdAt: this.createdAt.toISOString(),
       updatedAt: this.updatedAt.toISOString(),
       version: this.version,

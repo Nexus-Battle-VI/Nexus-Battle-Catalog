@@ -456,6 +456,63 @@ describe('MongoCanonicalProductRepository', () => {
     })
   })
 
+  describe('markRealMoneyPurchase (HU-36, CA-03)', () => {
+    it('marca la compra y avanza la version', async () => {
+      const product = buildProduct(...ATTRIBUTE_FIXTURES[2])
+      await repository.create(product)
+
+      const matched = await repository.markRealMoneyPurchase(
+        product.productId,
+        new Date('2026-09-06T10:00:00.000Z'),
+      )
+
+      expect(matched).toBe(true)
+      const found = await products().findOne({ _id: product.productId.value })
+      expect(found?.hasRealMoneyPurchase).toBe(true)
+      expect(found?.version ? Long.fromValue(found.version).toNumber() : 0).toBe(
+        product.version + 1,
+      )
+    })
+
+    it('un reintento deja el mismo resultado (true sobre true)', async () => {
+      const product = buildProduct(...ATTRIBUTE_FIXTURES[2])
+      await repository.create(product)
+
+      await repository.markRealMoneyPurchase(product.productId, new Date())
+      await repository.markRealMoneyPurchase(product.productId, new Date())
+
+      const found = await products().findOne({ _id: product.productId.value })
+      expect(found?.hasRealMoneyPurchase).toBe(true)
+    })
+
+    it('devuelve false para un producto inexistente, sin escribir nada', async () => {
+      const matched = await repository.markRealMoneyPurchase(
+        ProductId.create('ffffffff-ffff-4fff-8fff-ffffffffffff'),
+        new Date(),
+      )
+
+      expect(matched).toBe(false)
+    })
+
+    it('avanza la version del producto para que una actualizacion administrativa obsoleta choque', async () => {
+      const product = buildProduct(...ATTRIBUTE_FIXTURES[2])
+      await repository.create(product)
+
+      await repository.markRealMoneyPurchase(product.productId, new Date())
+
+      // `product` sigue con la version ORIGINAL, como si un administrador lo
+      // hubiera leido antes de la compra. Su `update()` debe chocar.
+      const doc = toCanonicalDocument(product)
+      const staleWriter = toCanonicalProduct({
+        ...doc,
+        version: Long.fromNumber(product.version + 1),
+      })
+      await expect(repository.update(staleWriter, product.version)).rejects.toBeInstanceOf(
+        CanonicalProductConcurrencyConflictError,
+      )
+    })
+  })
+
   describe('lectura por referencia y por lote (HU-27)', () => {
     it('prioriza la identidad canónica si otro producto usa el mismo UUID como alias', async () => {
       const productId = 'abcdefab-abcd-4abc-8abc-abcdefabcdef'

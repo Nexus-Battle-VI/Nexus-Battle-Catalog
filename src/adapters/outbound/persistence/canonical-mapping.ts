@@ -47,6 +47,7 @@ export interface CanonicalProductDocument {
   } | null
   readonly averageRating: number | null
   readonly reviewCount: Long
+  readonly hasRealMoneyPurchase: boolean
   readonly createdAt: Date
   readonly updatedAt: Date
   readonly version?: Long
@@ -118,6 +119,7 @@ export const toCanonicalDocument = (product: CanonicalProduct): CanonicalProduct
     // ausente.
     averageRating: snapshot.averageRating,
     reviewCount: toLong(snapshot.reviewCount, 'reviewCount', snapshot.productId),
+    hasRealMoneyPurchase: snapshot.hasRealMoneyPurchase,
     createdAt: new Date(snapshot.createdAt),
     updatedAt: new Date(snapshot.updatedAt),
     version: toLong(snapshot.version, 'version', snapshot.productId),
@@ -170,6 +172,7 @@ export const toCanonicalSnapshot = (
   // la migracion 012 no se aplico.
   averageRating: document.averageRating,
   reviewCount: toExactInteger(document.reviewCount, 'reviewCount', document._id),
+  hasRealMoneyPurchase: document.hasRealMoneyPurchase,
   createdAt: document.createdAt.toISOString(),
   updatedAt: document.updatedAt.toISOString(),
   version:
@@ -310,6 +313,7 @@ export const toCanonicalProduct = (document: CanonicalProductDocument): Canonica
       updatedAt,
       averageRating: snapshot.averageRating,
       reviewCount: snapshot.reviewCount,
+      hasRealMoneyPurchase: snapshot.hasRealMoneyPurchase,
       version: snapshot.version,
     })
 

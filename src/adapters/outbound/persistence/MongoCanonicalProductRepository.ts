@@ -286,6 +286,35 @@ export class MongoCanonicalProductRepository
     return result.matchedCount > 0
   }
 
+  /**
+   * Registra la compra en moneda real en una sola escritura condicionada
+   * (HU-36, CA-03), mismo estilo directo que `updateRating`: no reconstruye el
+   * agregado completo porque esta escritura no depende de ningun otro campo.
+   *
+   * LA VERSION AVANZA, mismo motivo que en `updateRating`: sin eso, un
+   * `update()` administrativo que hubiera leido el producto ANTES de esta
+   * compra escribiria despues con `replaceOne` sobre la misma version y
+   * pisaria en silencio la bandera recien empujada.
+   */
+  async markRealMoneyPurchase(
+    productId: ProductId,
+    at: Date,
+    context?: TransactionContext,
+  ): Promise<boolean> {
+    const session = context?.session ? (context.session as ClientSession) : undefined
+
+    const result = await this.products.updateOne(
+      { _id: productId.value, type: { $exists: true } },
+      {
+        $set: { hasRealMoneyPurchase: true, updatedAt: at },
+        $inc: { version: Long.fromNumber(1) },
+      },
+      { session },
+    )
+
+    return result.matchedCount > 0
+  }
+
   private translateDuplicate(error: unknown, product: CanonicalProduct): never {
     if (!(error instanceof MongoServerError) || error.code !== 11000) {
       throw error

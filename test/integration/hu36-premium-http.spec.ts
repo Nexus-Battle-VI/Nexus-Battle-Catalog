@@ -169,7 +169,7 @@ describe('HU-36 sobre HTTP', () => {
       expect(sinCambios.body).toMatchObject({ premium: false })
     })
 
-    it('retirar premium ya configurado es 422 (no soportado todavia)', async () => {
+    it('CA-03: retirar premium SIN compras en moneda real registradas es exitoso', async () => {
       const id = await crearProducto('corona-tres')
 
       await request(app.getHttpServer())
@@ -178,11 +178,13 @@ describe('HU-36 sobre HTTP', () => {
         .send({ premium: true, realMoneyPrice: { amount: 499, currency: 'USD' } })
         .expect(200)
 
-      await request(app.getHttpServer())
+      const retirado = await request(app.getHttpServer())
         .patch(`/api/v1/admin/products/${id}/premium`)
         .set('Authorization', 'Bearer token-admin')
         .send({ premium: false })
-        .expect(422)
+        .expect(200)
+
+      expect(retirado.body).toMatchObject({ premium: false })
     })
 
     it('un producto inexistente es 404', async () => {
@@ -264,6 +266,80 @@ describe('HU-36 sobre HTTP', () => {
         '/api/internal/v1/catalog/products/cccccccc-cccc-4ccc-8ccc-cccccccccccc/premium-status'
 
       await request(app.getHttpServer()).get(path).set(firmar(path)).expect(404)
+    })
+  })
+
+  describe('POST /api/internal/v1/catalog/products/{id}/premium-purchases (HU-36.6)', () => {
+    const firmarPost = (path: string): Record<string, string> => {
+      const timestamp = String(Date.now())
+
+      return {
+        [INTERNAL_SERVICE_HEADER]: 'commerce',
+        [INTERNAL_TIMESTAMP_HEADER]: timestamp,
+        [INTERNAL_SIGNATURE_HEADER]: signInternalRequest(SECRETO_DE_PRUEBAS, {
+          service: 'commerce',
+          method: 'POST',
+          path,
+          timestamp,
+          body: {},
+        }),
+      }
+    }
+
+    it('registra la compra sin exigir cuerpo, y a partir de ahi bloquea retirar premium', async () => {
+      const id = await crearProducto('corona-ocho')
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/admin/products/${id}/premium`)
+        .set('Authorization', 'Bearer token-admin')
+        .send({ premium: true, realMoneyPrice: { amount: 999, currency: 'USD' } })
+        .expect(200)
+
+      const path = `/api/internal/v1/catalog/products/${id}/premium-purchases`
+      await request(app.getHttpServer()).post(path).set(firmarPost(path)).expect(200)
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/admin/products/${id}/premium`)
+        .set('Authorization', 'Bearer token-admin')
+        .send({ premium: false })
+        .expect(409)
+    })
+
+    it('es idempotente: registrar la compra dos veces no cambia el resultado', async () => {
+      const id = await crearProducto('corona-nueve')
+      const path = `/api/internal/v1/catalog/products/${id}/premium-purchases`
+
+      await request(app.getHttpServer()).post(path).set(firmarPost(path)).expect(200)
+      await request(app.getHttpServer()).post(path).set(firmarPost(path)).expect(200)
+    })
+
+    it('sin firma es 401, y no llega a registrar la compra', async () => {
+      const id = await crearProducto('corona-diez')
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/admin/products/${id}/premium`)
+        .set('Authorization', 'Bearer token-admin')
+        .send({ premium: true, realMoneyPrice: { amount: 999, currency: 'USD' } })
+        .expect(200)
+
+      await request(app.getHttpServer())
+        .post(`/api/internal/v1/catalog/products/${id}/premium-purchases`)
+        .expect(401)
+
+      // El control: si la llamada sin firma hubiera registrado la compra,
+      // retirar premium ahora responderia 409 en vez de 200.
+      await request(app.getHttpServer())
+        .patch(`/api/v1/admin/products/${id}/premium`)
+        .set('Authorization', 'Bearer token-admin')
+        .send({ premium: false })
+        .expect(200)
+    })
+
+    it('un producto inexistente es 404', async () => {
+      const path =
+        '/api/internal/v1/catalog/products/cccccccc-cccc-4ccc-8ccc-cccccccccccc/premium-purchases'
+
+      await request(app.getHttpServer()).post(path).set(firmarPost(path)).expect(404)
     })
   })
 })
