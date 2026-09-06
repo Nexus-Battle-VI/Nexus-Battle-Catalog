@@ -337,6 +337,7 @@ export class CanonicalProduct {
     availableUnits: number | null,
     at: Date,
     rating?: { averageRating: number | null; reviewCount: number },
+    lifecycleStatus?: LifecycleStatus,
   ): CanonicalProduct {
     return new CanonicalProduct({
       productId: this.productId,
@@ -353,7 +354,7 @@ export class CanonicalProduct {
         premium: this.premium,
         realMoneyPrice: this.realMoneyPrice,
       },
-      lifecycleStatus: this.lifecycleStatus,
+      lifecycleStatus: lifecycleStatus ?? this.lifecycleStatus,
       createdAt: this.createdAt,
       updatedAt: at,
       averageRating: rating?.averageRating ?? this.averageRating,
@@ -363,6 +364,51 @@ export class CanonicalProduct {
       // misma version, y el segundo pisaria al primero sin que nada lo notara.
       version: this.version + 1,
     })
+  }
+
+  /**
+   * Suspende el producto: borrado logico (HU-35, CA-01). Nunca se elimina el
+   * documento ni sus referencias; solo cambia `lifecycleStatus`.
+   *
+   * Reutiliza guardas que YA EXISTEN en el resto del agregado: `reserveUnits`
+   * ya rechaza operar sobre un producto suspendido, y la proyeccion de
+   * vitrina publica ya filtra por `lifecycleStatus: ACTIVE`. Esta operacion
+   * no necesita tocar ninguna de las dos.
+   *
+   * IDEMPOTENTE: si ya esta suspendido, devuelve el MISMO agregado (misma
+   * referencia, `version` sin avanzar). El caso de uso usa esa igualdad de
+   * referencia para no escribir un segundo evento de auditoria ni de outbox.
+   */
+  suspend(at: Date): CanonicalProduct {
+    if (this.lifecycleStatus === LifecycleStatus.Suspended) {
+      return this
+    }
+
+    return this.copyWith(
+      this.printRun,
+      this.availableUnits,
+      at,
+      undefined,
+      LifecycleStatus.Suspended,
+    )
+  }
+
+  /**
+   * Reactiva el producto (HU-35, CA-03).
+   *
+   * NO restituye unidades: `availableUnits` es independiente de
+   * `lifecycleStatus`, asi que un producto agotado antes de suspenderse sigue
+   * agotado despues de reactivarse, sin logica adicional. Ampliar el tiraje
+   * para volver a habilitar adquisiciones es HU-034, no esta operacion.
+   *
+   * Idempotente igual que `suspend`.
+   */
+  reactivate(at: Date): CanonicalProduct {
+    if (this.lifecycleStatus === LifecycleStatus.Active) {
+      return this
+    }
+
+    return this.copyWith(this.printRun, this.availableUnits, at, undefined, LifecycleStatus.Active)
   }
 
   /**

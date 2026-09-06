@@ -18,6 +18,7 @@ import { InternalProductRatingController } from '../../adapters/inbound/http/int
 import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
 import { AdjustProductInventory } from '../../application/use-cases/AdjustProductInventory'
 import { ConfigureProductPremium } from '../../application/use-cases/ConfigureProductPremium'
+import { UpdateProductLifecycleStatus } from '../../application/use-cases/UpdateProductLifecycleStatus'
 import { GetCanonicalProduct } from '../../application/use-cases/GetCanonicalProduct'
 import { AcquireProductUnit } from '../../application/use-cases/AcquireProductUnit'
 import { UpdateProductRating } from '../../application/use-cases/UpdateProductRating'
@@ -51,6 +52,7 @@ import {
   GET_CANONICAL_PRODUCT,
   ACQUIRE_PRODUCT_UNIT,
   UPDATE_PRODUCT_RATING,
+  UPDATE_PRODUCT_LIFECYCLE_STATUS,
   CREATE_PRODUCT_ASSET_UPLOAD_INTENT,
   FINALIZE_PRODUCT_ASSET,
   GET_PRODUCT_ASSET_CONTENT,
@@ -483,6 +485,26 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         outbox: ProductOutboxPort,
       ): ConfigureProductPremium =>
         new ConfigureProductPremium({ products, clock, idGenerator, unitOfWork, audit, outbox }),
+      inject: [
+        CANONICAL_PRODUCT_WRITE,
+        CLOCK,
+        ID_GENERATOR,
+        CANONICAL_PRODUCT_UNIT_OF_WORK,
+        PRODUCT_AUDIT_PORT,
+        PRODUCT_OUTBOX_PORT,
+      ],
+    },
+    {
+      provide: UPDATE_PRODUCT_LIFECYCLE_STATUS,
+      useFactory: (
+        products: CanonicalProductRepositoryPort,
+        clock: ClockPort,
+        idGenerator: IdGeneratorPort,
+        unitOfWork: CanonicalProductUnitOfWorkPort,
+        audit: ProductAuditPort,
+        outbox: ProductOutboxPort,
+      ): UpdateProductLifecycleStatus =>
+        new UpdateProductLifecycleStatus({ products, clock, idGenerator, unitOfWork, audit, outbox }),
       inject: [
         CANONICAL_PRODUCT_WRITE,
         CLOCK,
