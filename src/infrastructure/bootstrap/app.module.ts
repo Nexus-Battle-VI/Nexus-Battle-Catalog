@@ -504,7 +504,14 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         audit: ProductAuditPort,
         outbox: ProductOutboxPort,
       ): UpdateProductLifecycleStatus =>
-        new UpdateProductLifecycleStatus({ products, clock, idGenerator, unitOfWork, audit, outbox }),
+        new UpdateProductLifecycleStatus({
+          products,
+          clock,
+          idGenerator,
+          unitOfWork,
+          audit,
+          outbox,
+        }),
       inject: [
         CANONICAL_PRODUCT_WRITE,
         CLOCK,

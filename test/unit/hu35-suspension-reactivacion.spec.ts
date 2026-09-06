@@ -313,7 +313,11 @@ describe('HU-35: suspension y reactivacion de producto', () => {
       const { uso } = construir()
 
       await expect(
-        uso.execute(AUSENTE, { status: 'SUSPENDED', reason: MOTIVO_VALIDO }, { subject: 'admin-1' }),
+        uso.execute(
+          AUSENTE,
+          { status: 'SUSPENDED', reason: MOTIVO_VALIDO },
+          { subject: 'admin-1' },
+        ),
       ).rejects.toThrow(CanonicalProductNotFoundError)
     })
   })
