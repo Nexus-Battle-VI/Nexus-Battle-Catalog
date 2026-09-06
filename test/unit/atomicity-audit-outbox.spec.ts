@@ -51,6 +51,7 @@ describe('EN-027.6: Concurrencia optimista y Unidad Transaccional', () => {
       updatedAt: new Date('2026-09-01T00:00:00.000Z'),
       averageRating: null,
       reviewCount: 0,
+      hasRealMoneyPurchase: false,
       version,
     })
 
@@ -119,6 +120,7 @@ describe('EN-027.7: Auditoría insert-only de Producto', () => {
       realMoneyPrice: null,
       averageRating: null,
       reviewCount: 0,
+      hasRealMoneyPurchase: false,
       createdAt: '2026-09-02T12:00:00.000Z',
       updatedAt: '2026-09-02T12:00:00.000Z',
       version: 0,

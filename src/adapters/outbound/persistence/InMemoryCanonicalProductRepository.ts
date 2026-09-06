@@ -218,4 +218,16 @@ export class InMemoryCanonicalProductRepository
     this.byId.set(productId.value, current.withRating(rating, at))
     return Promise.resolve(true)
   }
+
+  /** Mismo comportamiento que la version de Mongo, sin condicion real: un solo proceso. */
+  markRealMoneyPurchase(productId: ProductId, at: Date): Promise<boolean> {
+    const current = this.byId.get(productId.value)
+
+    if (current === undefined) {
+      return Promise.resolve(false)
+    }
+
+    this.byId.set(productId.value, current.withRealMoneyPurchase(at))
+    return Promise.resolve(true)
+  }
 }

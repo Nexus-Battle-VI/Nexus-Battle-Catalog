@@ -18,6 +18,7 @@ import { DomainError } from '../../../domain/errors/DomainError'
 import {
   CanonicalProductConcurrencyConflictError,
   CanonicalProductNotFoundError,
+  ProductPremiumPurchaseConflictError,
 } from '../../../application/errors/ApplicationError'
 import type { CanonicalProductDto } from '../../../application/dto/CanonicalProductDto'
 import type { AdjustProductInventory } from '../../../application/use-cases/AdjustProductInventory'
@@ -132,11 +133,14 @@ export class AdminProductsController {
   @ApiResponse({ status: 401, description: 'Testimonio ausente, invalido o vencido' })
   @ApiResponse({ status: 403, description: 'Rol no autorizado o segundo factor ausente' })
   @ApiResponse({ status: 404, description: 'El producto no existe' })
-  @ApiResponse({ status: 409, description: 'Otro ajuste modifico el producto entre medias' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'Otro ajuste modifico el producto entre medias, o se intento retirar premium de un producto con compras en moneda real ya registradas',
+  })
   @ApiResponse({
     status: 422,
-    description:
-      'Precio en moneda real invalido para la condicion premium solicitada, o intento de retirar premium (no soportado todavia)',
+    description: 'Precio en moneda real invalido para la condicion premium solicitada',
   })
   @ApiResponse({ status: 503, description: 'No se pudo comprobar el segundo factor' })
   async configurePremium(
@@ -216,7 +220,10 @@ export class AdminProductsController {
       return new NotFoundException(error.message)
     }
 
-    if (error instanceof CanonicalProductConcurrencyConflictError) {
+    if (
+      error instanceof CanonicalProductConcurrencyConflictError ||
+      error instanceof ProductPremiumPurchaseConflictError
+    ) {
       return new ConflictException(error.message)
     }
 

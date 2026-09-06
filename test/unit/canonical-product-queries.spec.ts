@@ -79,6 +79,7 @@ const buildProduct = (params: {
       updatedAt: base.createdAt,
       averageRating: null,
       reviewCount: 0,
+      hasRealMoneyPurchase: false,
       version: 0,
     })
   }
