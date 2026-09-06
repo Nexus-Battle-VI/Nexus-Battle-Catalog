@@ -23,18 +23,21 @@ import type { CanonicalProductDto } from '../../../application/dto/CanonicalProd
 import type { AdjustProductInventory } from '../../../application/use-cases/AdjustProductInventory'
 import type { ConfigureProductPremium } from '../../../application/use-cases/ConfigureProductPremium'
 import type { GetCanonicalProduct } from '../../../application/use-cases/GetCanonicalProduct'
+import type { UpdateProductLifecycleStatus } from '../../../application/use-cases/UpdateProductLifecycleStatus'
 import { Role, type VerifiedIdentity } from '../../../application/ports/TokenVerifierPort'
 import type { AuditActor } from '../../../application/ports/CanonicalProductPorts'
 import {
   ADJUST_PRODUCT_INVENTORY,
   CONFIGURE_PRODUCT_PREMIUM,
   GET_CANONICAL_PRODUCT,
+  UPDATE_PRODUCT_LIFECYCLE_STATUS,
 } from './tokens'
 import { CurrentIdentity, RequiresMfaEvidence, Roles } from './auth/decorators'
 import {
   AdjustInventoryRequest,
   CanonicalProductResponse,
   ConfigurePremiumRequest,
+  UpdateProductStatusRequest,
 } from './admin-products.dto'
 
 /**
@@ -55,6 +58,8 @@ export class AdminProductsController {
     private readonly configureProductPremium: ConfigureProductPremium,
     @Inject(GET_CANONICAL_PRODUCT)
     private readonly getCanonicalProduct: GetCanonicalProduct,
+    @Inject(UPDATE_PRODUCT_LIFECYCLE_STATUS)
+    private readonly updateProductLifecycleStatus: UpdateProductLifecycleStatus,
   ) {}
 
   @Get(':id')
@@ -150,6 +155,44 @@ export class AdminProductsController {
     }
   }
 
+  @Patch(':id/status')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.Administrator)
+  @RequiresMfaEvidence()
+  @ApiOperation({
+    operationId: 'updateCatalogProductStatusV1',
+    summary: 'Suspende (borrado logico) o reactiva un producto',
+  })
+  @ApiParam({ name: 'id', description: 'Identificador del producto canonico' })
+  @ApiResponse({
+    status: 200,
+    description: 'Estado actualizado (o ya se encontraba en el estado solicitado)',
+    type: CanonicalProductResponse,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Cuerpo o campos no declarados invalidos, o motivo ausente/menor a 10 caracteres',
+  })
+  @ApiResponse({ status: 401, description: 'Testimonio ausente, invalido o vencido' })
+  @ApiResponse({ status: 403, description: 'Rol no autorizado o segundo factor ausente' })
+  @ApiResponse({ status: 404, description: 'El producto no existe' })
+  @ApiResponse({ status: 503, description: 'No se pudo comprobar el segundo factor' })
+  async updateStatus(
+    @Param('id') id: string,
+    @Body() body: UpdateProductStatusRequest,
+    @CurrentIdentity() identity: VerifiedIdentity,
+  ): Promise<CanonicalProductDto> {
+    try {
+      return await this.updateProductLifecycleStatus.execute(
+        id,
+        body,
+        AdminProductsController.buildActor(identity),
+      )
+    } catch (error: unknown) {
+      throw AdminProductsController.translate(error)
+    }
+  }
+
   /**
    * Se OMITEN las claves ausentes en lugar de escribirlas como `undefined`: el
    * controlador de MongoDB serializa `undefined` como null y el validador de
@@ -190,7 +233,11 @@ export class AdminProductsController {
   }
 
   private static isRequestShapeError(error: DomainError): boolean {
-    return /no es una propiedad admitida|es obligatorio\.|debe ser (un objeto|texto|un entero|booleano|una lista)\./u.test(
+    // "Debe tener al menos N caracteres" entra aqui a proposito: CA-02 de
+    // HU-35 exige 400 tanto para el motivo ausente como para uno demasiado
+    // corto, tratando ambos como el mismo tipo de defecto (forma de la
+    // solicitud), no como una regla de negocio sobre el producto.
+    return /no es una propiedad admitida|es obligatorio\.|debe ser (un objeto|texto|un entero|booleano|una lista)\.|debe tener al menos \d+ caracteres\.|debe ser uno de: /u.test(
       error.message,
     )
   }

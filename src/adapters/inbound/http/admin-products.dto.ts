@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { IsBoolean, IsInt, ValidateIf, ValidateNested } from 'class-validator'
+import { IsBoolean, IsIn, IsInt, IsString, ValidateIf, ValidateNested } from 'class-validator'
 import { Type } from 'class-transformer'
 
 import { RealMoneyPriceRequest } from './canonical-products.dto'
@@ -55,4 +55,30 @@ export class ConfigurePremiumRequest {
   @ValidateNested()
   @Type(() => RealMoneyPriceRequest)
   realMoneyPrice?: RealMoneyPriceRequest | null
+}
+
+/**
+ * Cuerpo de la suspension/reactivacion (HU-35, CA-01/CA-02/CA-03).
+ *
+ * `@IsIn`/`@IsString()` son las UNICAS comprobaciones de forma aqui. Que el
+ * motivo tenga al menos 10 caracteres es una regla que el propio CA-02 pide
+ * que responda 400 (igual que un campo ausente), asi que se valida en el caso
+ * de uso con `schema-validation.ts` en vez de aqui, para no duplicar el
+ * mensaje en dos capas.
+ */
+export class UpdateProductStatusRequest {
+  @ApiProperty({
+    enum: ['SUSPENDED', 'ACTIVE'],
+    description: 'Estado destino del producto.',
+  })
+  @IsIn(['SUSPENDED', 'ACTIVE'])
+  status!: 'SUSPENDED' | 'ACTIVE'
+
+  @ApiProperty({
+    description: 'Motivo de la suspension o reactivacion. Minimo 10 caracteres.',
+    minLength: 10,
+    example: 'Rebalanceo pendiente de estadísticas',
+  })
+  @IsString()
+  reason!: string
 }
