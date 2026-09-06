@@ -37,6 +37,21 @@ export const AssetsStorageDriver = {
 
 export type AssetsStorageDriver = (typeof AssetsStorageDriver)[keyof typeof AssetsStorageDriver]
 
+/**
+ * Configuracion del despachador del outbox hacia SQS (HU-38, ADR-017/018).
+ * `enabled=false` es el default de despliegue (ADR-017): permite desplegar el
+ * adaptador sin empezar a publicar por accidente. Con `enabled=true`,
+ * `awsRegion`/`eventsQueueUrl`/`lifecycleQueueUrl` son obligatorios -fail
+ * closed, ver `loadConfig`-.
+ */
+export interface EventDispatchConfig {
+  readonly enabled: boolean
+  readonly awsRegion: string | null
+  readonly eventsQueueUrl: string | null
+  readonly lifecycleQueueUrl: string | null
+  readonly batchSize: number
+}
+
 export interface AppConfig {
   readonly nodeEnv: 'development' | 'test' | 'production'
   readonly serviceName: string
@@ -65,6 +80,7 @@ export interface AppConfig {
   readonly assetsRegion: string
   readonly assetsBaseUrl: string
   readonly assetsEnforceStrict: boolean
+  readonly eventDispatch: EventDispatchConfig
 }
 
 type RawEnv = Readonly<Record<string, string | undefined>>
@@ -226,6 +242,36 @@ export const loadConfig = (env: RawEnv): AppConfig => {
     )
   }
 
+  // HU-38 / ADR-017 / ADR-018: publicar hacia colas reales exige region y
+  // ambas URLs. Deliberadamente NO se reutiliza `assetsRegion` (con default
+  // "us-east-1"): aqui, con el despacho activo, un AWS_REGION ausente debe
+  // impedir el arranque, no caer en un valor por defecto en silencio.
+  const eventDispatchEnabled = readBoolean(env, 'CATALOG_EVENT_DISPATCH_ENABLED', false)
+  const eventDispatchAwsRegion = readString(env, 'AWS_REGION', '') || null
+  const catalogEventsQueueUrl = readString(env, 'CATALOG_EVENTS_QUEUE_URL', '') || null
+  const catalogLifecycleQueueUrl = readString(env, 'CATALOG_LIFECYCLE_QUEUE_URL', '') || null
+  const eventDispatchBatchSize = readInteger(env, 'CATALOG_EVENT_DISPATCH_BATCH_SIZE', 10, 1, 10)
+
+  if (eventDispatchEnabled) {
+    if (eventDispatchAwsRegion === null) {
+      throw new ConfigurationError(
+        'AWS_REGION es obligatorio cuando CATALOG_EVENT_DISPATCH_ENABLED es "true".',
+      )
+    }
+
+    if (catalogEventsQueueUrl === null) {
+      throw new ConfigurationError(
+        'CATALOG_EVENTS_QUEUE_URL es obligatorio cuando CATALOG_EVENT_DISPATCH_ENABLED es "true".',
+      )
+    }
+
+    if (catalogLifecycleQueueUrl === null) {
+      throw new ConfigurationError(
+        'CATALOG_LIFECYCLE_QUEUE_URL es obligatorio cuando CATALOG_EVENT_DISPATCH_ENABLED es "true".',
+      )
+    }
+  }
+
   return {
     nodeEnv,
     serviceName: readString(env, 'SERVICE_NAME', 'nexus-battle-catalog'),
@@ -255,5 +301,12 @@ export const loadConfig = (env: RawEnv): AppConfig => {
     assetsRegion,
     assetsBaseUrl,
     assetsEnforceStrict,
+    eventDispatch: {
+      enabled: eventDispatchEnabled,
+      awsRegion: eventDispatchAwsRegion,
+      eventsQueueUrl: catalogEventsQueueUrl,
+      lifecycleQueueUrl: catalogLifecycleQueueUrl,
+      batchSize: eventDispatchBatchSize,
+    },
   }
 }

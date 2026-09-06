@@ -36,6 +36,7 @@ import {
 import type { ClockPort } from '../ports/ClockPort'
 import type { IdGeneratorPort } from '../ports/IdGeneratorPort'
 import type { ProductAssetRepositoryPort } from '../ports/ProductAssetRepositoryPort'
+import type { RequestTraceContext } from '../ports/RequestTraceContext'
 import {
   HeroCombatBranch,
   OutboxStatus,
@@ -80,7 +81,11 @@ interface ParsedCreateCommand {
 export class CreateCanonicalProduct {
   constructor(private readonly deps: CreateCanonicalProductDependencies) {}
 
-  async execute(rawCommand: unknown, actor?: AuditActor): Promise<CanonicalProductDto> {
+  async execute(
+    rawCommand: unknown,
+    actor: AuditActor | undefined,
+    trace: RequestTraceContext,
+  ): Promise<CanonicalProductDto> {
     const command = parseCreateCommand(rawCommand)
     const normalizedName = normalizeProductName(command.name.value)
 
@@ -141,6 +146,7 @@ export class CreateCanonicalProduct {
       lastError: null,
       dispatchedAt: null,
       purgeAt: null,
+      correlationId: trace.correlationId,
     }
 
     if (this.deps.unitOfWork) {

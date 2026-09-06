@@ -12,6 +12,7 @@ import {
 } from '../errors/ApplicationError'
 import type { ClockPort } from '../ports/ClockPort'
 import type { IdGeneratorPort } from '../ports/IdGeneratorPort'
+import type { RequestTraceContext } from '../ports/RequestTraceContext'
 import {
   OutboxStatus,
   type AuditActor,
@@ -63,7 +64,8 @@ export class UpdateProductLifecycleStatus {
   async execute(
     rawProductId: string,
     rawCommand: unknown,
-    actor?: AuditActor,
+    actor: AuditActor | undefined,
+    trace: RequestTraceContext,
   ): Promise<CanonicalProductDto> {
     const productId = ProductId.create(rawProductId)
     const record = asStrictObject(rawCommand, 'command', ['status', 'reason'])
@@ -129,6 +131,7 @@ export class UpdateProductLifecycleStatus {
       lastError: null,
       dispatchedAt: null,
       purgeAt: null,
+      correlationId: trace.correlationId,
     }
 
     const escribir = async (tx?: TransactionContext): Promise<void> => {

@@ -86,6 +86,41 @@ export class OutboxPayloadTooLargeError extends Error {
   }
 }
 
+/**
+ * El envelope V1 (ADR-017/018, AsyncAPI catalog-events-v1) exige
+ * `correlationId` como trazabilidad de la solicitud original. Ningun caso de
+ * uso de Catalog la conserva hoy -auditado en codigo-, asi que el dispatcher
+ * no puede fabricarla (ni con `eventId`, ni con un UUID nuevo en cada
+ * intento) sin romper esa semantica. Ver HU-38, BLOCKER-CONTRACT.
+ */
+export class MissingCorrelationIdError extends Error {
+  constructor(eventId: string, eventType: string) {
+    super(
+      `El evento de outbox ${eventId} (${eventType}) no tiene correlationId: ` +
+        'el contrato exige la trazabilidad de la solicitud original y Catalog no la conserva todavia.',
+    )
+    this.name = 'MissingCorrelationIdError'
+  }
+}
+
+/** El eventType del outbox no forma parte del transporte aprobado por HU-38 (ADR-017/018). */
+export class UnsupportedOutboxEventTypeError extends Error {
+  constructor(eventType: string) {
+    super(`El eventType "${eventType}" no tiene un destino de publicacion aprobado.`)
+    this.name = 'UnsupportedOutboxEventTypeError'
+  }
+}
+
+/** El envelope serializado supera el tamaño maximo de mensaje de SQS (ADR-017/018: 65536 bytes). */
+export class ProductEventEnvelopeTooLargeError extends Error {
+  constructor(eventId: string, sizeBytes: number, maxBytes = 65_536) {
+    super(
+      `El envelope del evento ${eventId} (${String(sizeBytes)} bytes) supera el limite de ${String(maxBytes)} bytes de SQS.`,
+    )
+    this.name = 'ProductEventEnvelopeTooLargeError'
+  }
+}
+
 export class ProductAssetNotFoundError extends Error {
   constructor(assetId: string) {
     super(`El recurso visual "${assetId}" no existe.`)
