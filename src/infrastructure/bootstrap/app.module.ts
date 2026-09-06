@@ -14,6 +14,7 @@ import { CanonicalProductsController } from '../../adapters/inbound/http/canonic
 import { AdminProductsController } from '../../adapters/inbound/http/admin-products.controller'
 import { InternalProductAcquisitionsController } from '../../adapters/inbound/http/internal-product-acquisitions.controller'
 import { InternalProductPremiumStatusController } from '../../adapters/inbound/http/internal-product-premium-status.controller'
+import { InternalProductPremiumPurchaseController } from '../../adapters/inbound/http/internal-product-premium-purchase.controller'
 import { InternalProductRatingController } from '../../adapters/inbound/http/internal-product-rating.controller'
 import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
 import { AdjustProductInventory } from '../../application/use-cases/AdjustProductInventory'
@@ -22,6 +23,7 @@ import { UpdateProductLifecycleStatus } from '../../application/use-cases/Update
 import { GetCanonicalProduct } from '../../application/use-cases/GetCanonicalProduct'
 import { AcquireProductUnit } from '../../application/use-cases/AcquireProductUnit'
 import { UpdateProductRating } from '../../application/use-cases/UpdateProductRating'
+import { RegisterProductRealMoneyPurchase } from '../../application/use-cases/RegisterProductRealMoneyPurchase'
 import { ListCatalogStorefront } from '../../application/use-cases/ListCatalogStorefront'
 import type { CatalogStorefrontPort } from '../../application/ports/CatalogStorefrontPort'
 import { StockReservations } from '../../application/use-cases/StockReservations'
@@ -61,6 +63,7 @@ import {
   ACQUIRE_PRODUCT_UNIT,
   UPDATE_PRODUCT_RATING,
   UPDATE_PRODUCT_LIFECYCLE_STATUS,
+  REGISTER_PRODUCT_REAL_MONEY_PURCHASE,
   CREATE_PRODUCT_ASSET_UPLOAD_INTENT,
   FINALIZE_PRODUCT_ASSET,
   GET_PRODUCT_ASSET_CONTENT,
@@ -171,6 +174,7 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
     AdminProductsController,
     InternalProductAcquisitionsController,
     InternalProductPremiumStatusController,
+    InternalProductPremiumPurchaseController,
     InternalProductRatingController,
     InternalStockReservationsController,
     AdminProductAssetsController,
@@ -563,6 +567,15 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
         products: CanonicalProductRepositoryPort,
         clock: ClockPort,
       ): UpdateProductRating => new UpdateProductRating({ products, clock }),
+      inject: [CANONICAL_PRODUCT_WRITE, CLOCK],
+    },
+    {
+      provide: REGISTER_PRODUCT_REAL_MONEY_PURCHASE,
+      useFactory: (
+        products: CanonicalProductRepositoryPort,
+        clock: ClockPort,
+      ): RegisterProductRealMoneyPurchase =>
+        new RegisterProductRealMoneyPurchase({ products, clock }),
       inject: [CANONICAL_PRODUCT_WRITE, CLOCK],
     },
     {

@@ -67,6 +67,16 @@ export class CanonicalProductConcurrencyConflictError extends Error {
   }
 }
 
+/** HU-36, CA-03: retirar premium de un producto con compras en moneda real ya registradas. */
+export class ProductPremiumPurchaseConflictError extends Error {
+  constructor(productId: string) {
+    super(
+      `No es posible retirar la condicion premium del producto "${productId}": ya tiene compras en moneda real registradas.`,
+    )
+    this.name = 'ProductPremiumPurchaseConflictError'
+  }
+}
+
 export class OutboxPayloadTooLargeError extends Error {
   constructor(sizeBytes: number, maxBytes = 256 * 1024) {
     super(

@@ -63,6 +63,7 @@ export const catalogFixture = (
     updatedAt: new Date('2026-09-03T00:00:00Z'),
     averageRating: null,
     reviewCount: 0,
+    hasRealMoneyPurchase: false,
     version: 0,
   })
 }

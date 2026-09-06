@@ -2,7 +2,10 @@ import { ConfigureProductPremium } from '../../src/application/use-cases/Configu
 import { InMemoryCanonicalProductRepository } from '../../src/adapters/outbound/persistence/InMemoryCanonicalProductRepository'
 import { InMemoryProductAuditRepository } from '../../src/adapters/outbound/persistence/InMemoryProductAuditRepository'
 import { InMemoryProductOutboxRepository } from '../../src/adapters/outbound/persistence/InMemoryProductOutboxRepository'
-import { CanonicalProductNotFoundError } from '../../src/application/errors/ApplicationError'
+import {
+  CanonicalProductNotFoundError,
+  ProductPremiumPurchaseConflictError,
+} from '../../src/application/errors/ApplicationError'
 import { CanonicalProduct } from '../../src/domain/entities/CanonicalProduct'
 import { DomainError } from '../../src/domain/errors/DomainError'
 import {
@@ -89,8 +92,25 @@ describe('HU-36: producto premium y precio en moneda real', () => {
       ).toThrow(/requiere un precio en moneda real positivo/u)
     })
 
-    it('retirar premium NO esta soportado todavia (HU-36.6 sin resolver)', () => {
-      const premiumComprado = producto(true, Money.create(999, 'USD'))
+    it('CA-03: retirar premium SIN compras en moneda real registradas es valido', () => {
+      const premiumSinCompras = producto(true, Money.create(999, 'USD'))
+
+      const retirado = premiumSinCompras.configurePremium(
+        ProductPricing.create({
+          creditsPrice: CreditsPrice.create(0),
+          premium: false,
+          realMoneyPrice: null,
+        }),
+        new Date(),
+      )
+
+      expect(retirado.premium).toBe(false)
+    })
+
+    it('CA-03: retirar premium CON compras en moneda real registradas se rechaza', () => {
+      const premiumComprado = producto(true, Money.create(999, 'USD')).withRealMoneyPurchase(
+        new Date(),
+      )
 
       expect(() =>
         premiumComprado.configurePremium(
@@ -101,7 +121,7 @@ describe('HU-36: producto premium y precio en moneda real', () => {
           }),
           new Date(),
         ),
-      ).toThrow(/no esta soportado todavia/u)
+      ).toThrow(/compras en moneda real ya registradas/u)
     })
 
     it('marcar como no-premium un producto que ya era no-premium es un no-op valido', () => {
@@ -195,13 +215,23 @@ describe('HU-36: producto premium y precio en moneda real', () => {
       await expect(audit.findByAggregateId(ID)).resolves.toHaveLength(0)
     })
 
-    it('retirar premium responde con DomainError, no con exito silencioso', async () => {
+    it('CA-03: retirar premium SIN compras registradas es exitoso', async () => {
       const { uso, products } = construir()
       await products.create(producto(true, Money.create(999, 'USD')))
 
+      const dto = await uso.execute(ID, { premium: false }, { subject: 'admin-1' }, TRACE)
+
+      expect(dto.premium).toBe(false)
+    })
+
+    it('CA-03: retirar premium CON compras registradas responde 409 (ProductPremiumPurchaseConflictError)', async () => {
+      const { uso, products } = construir()
+      await products.create(producto(true, Money.create(999, 'USD')))
+      await products.markRealMoneyPurchase(ProductId.create(ID), new Date())
+
       await expect(
         uso.execute(ID, { premium: false }, { subject: 'admin-1' }, TRACE),
-      ).rejects.toThrow(/no esta soportado todavia/u)
+      ).rejects.toThrow(ProductPremiumPurchaseConflictError)
 
       const sinCambios = await products.findById(ProductId.create(ID))
 

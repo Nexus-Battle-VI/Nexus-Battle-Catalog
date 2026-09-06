@@ -26,6 +26,10 @@ export interface ProductPremiumStatusResponse {
  * `AppModule` no incluye `auction` porque ese servicio no existe todavia.
  * Anadirlo es una decision explicita para cuando se coordine, igual que la
  * lista ya documenta para `commerce`.
+ *
+ * La MUTACION relacionada -registrar una compra en moneda real, HU-36.6- vive
+ * en `InternalProductPremiumPurchaseController`, deliberadamente separada de
+ * este controlador de solo lectura.
  */
 @ApiExcludeController()
 @Controller('internal/v1/catalog/products')

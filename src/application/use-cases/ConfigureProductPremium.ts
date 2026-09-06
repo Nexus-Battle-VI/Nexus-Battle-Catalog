@@ -16,6 +16,7 @@ import { toCanonicalProductDto, type CanonicalProductDto } from '../dto/Canonica
 import {
   CanonicalProductNotFoundError,
   OutboxPayloadTooLargeError,
+  ProductPremiumPurchaseConflictError,
 } from '../errors/ApplicationError'
 import type { ClockPort } from '../ports/ClockPort'
 import type { IdGeneratorPort } from '../ports/IdGeneratorPort'
@@ -61,12 +62,16 @@ const parseRealMoneyPrice = (raw: unknown): Money | null => {
 
 /**
  * Activa/actualiza la condicion premium de un producto canonico (HU-36,
- * CA-01/CA-02).
+ * CA-01/CA-02/CA-03).
  *
  * Sigue el mismo patron transaccional que `AdjustProductInventory`: producto,
- * auditoria (RNF-06) y evento de outbox se escriben juntos (ADR-015). Retirar
- * premium queda fuera de esta operacion; vease el comentario de
- * `CanonicalProduct.configurePremium`.
+ * auditoria (RNF-06) y evento de outbox se escriben juntos (ADR-015).
+ *
+ * RETIRAR PREMIUM (`true` -> `false`) se comprueba AQUI, no solo en el
+ * dominio: `CanonicalProduct.configurePremium` repite la misma condicion como
+ * defensa en profundidad, pero solo aqui se puede traducir el conflicto a
+ * `409` (`ProductPremiumPurchaseConflictError`) en vez del `422` generico que
+ * produce un `DomainError` sin tipo especifico.
  */
 export class ConfigureProductPremium {
   constructor(private readonly deps: ConfigureProductPremiumDependencies) {}
@@ -93,6 +98,10 @@ export class ConfigureProductPremium {
       premium,
       realMoneyPrice,
     })
+
+    if (actual.premium && !pricing.premium && actual.hasRealMoneyPurchase) {
+      throw new ProductPremiumPurchaseConflictError(productId.value)
+    }
 
     const now = this.deps.clock.now()
     const configurado = actual.configurePremium(pricing, now)

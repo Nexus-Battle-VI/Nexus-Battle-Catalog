@@ -411,6 +411,7 @@ describe('MongoProductRepository', () => {
           '010-stock-reservations',
           '011-storefront-search',
           '012-product-ratings',
+          '013-product-real-money-purchase',
         ])
         await expect(upgradeProducts.insertOne(invalidPremium)).rejects.toThrow()
       } finally {

@@ -107,6 +107,23 @@ export interface CanonicalProductWritePort {
     at: Date,
     context?: TransactionContext,
   ): Promise<boolean>
+
+  /**
+   * Registra que el producto tuvo una compra en moneda real (HU-36, CA-03).
+   *
+   * MISMO CRITERIO QUE `updateRating`: escritura ABSOLUTA -Commerce ya sabe
+   * que hubo una compra aprobada, asi que un reintento de la misma llamada no
+   * cambia nada-, sin control de concurrencia optimista, porque dos llamadas
+   * sucesivas para el mismo producto dejan el mismo resultado (`true`).
+   *
+   * Devuelve `false` cuando el producto no existe -quien llama traduce eso a
+   * 404-.
+   */
+  markRealMoneyPurchase(
+    productId: ProductId,
+    at: Date,
+    context?: TransactionContext,
+  ): Promise<boolean>
 }
 
 /** Almacén canónico completo durante la transición aditiva de ADR-013. */

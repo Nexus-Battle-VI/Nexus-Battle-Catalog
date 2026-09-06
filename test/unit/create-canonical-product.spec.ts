@@ -69,6 +69,10 @@ class ProductWriterFake implements CanonicalProductWritePort {
   updateRating(): Promise<never> {
     return Promise.reject(new Error('updateRating no se usa en la creacion.'))
   }
+
+  markRealMoneyPurchase(): Promise<never> {
+    return Promise.reject(new Error('markRealMoneyPurchase no se usa en la creacion.'))
+  }
 }
 
 class HeroSubtypeRegistryFake implements HeroSubtypeRegistryPort {
