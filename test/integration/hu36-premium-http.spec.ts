@@ -253,6 +253,43 @@ describe('HU-36 sobre HTTP', () => {
       expect(respuesta.body).toEqual({ productId: id, premium: false })
     })
 
+    it('HU-36.6: un intento de retiro rechazado por CA-03 (409) no cambia lo que ve Auction', async () => {
+      const id = await crearProducto('corona-once')
+      await request(app.getHttpServer())
+        .patch(`/api/v1/admin/products/${id}/premium`)
+        .set('Authorization', 'Bearer token-admin')
+        .send({ premium: true, realMoneyPrice: { amount: 999, currency: 'USD' } })
+        .expect(200)
+
+      const purchasePath = `/api/internal/v1/catalog/products/${id}/premium-purchases`
+      const purchaseTimestamp = String(Date.now())
+      await request(app.getHttpServer())
+        .post(purchasePath)
+        .set({
+          [INTERNAL_SERVICE_HEADER]: 'commerce',
+          [INTERNAL_TIMESTAMP_HEADER]: purchaseTimestamp,
+          [INTERNAL_SIGNATURE_HEADER]: signInternalRequest(SECRETO_DE_PRUEBAS, {
+            service: 'commerce',
+            method: 'POST',
+            path: purchasePath,
+            timestamp: purchaseTimestamp,
+            body: {},
+          }),
+        })
+        .expect(200)
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/admin/products/${id}/premium`)
+        .set('Authorization', 'Bearer token-admin')
+        .send({ premium: false })
+        .expect(409)
+
+      const path = `/api/internal/v1/catalog/products/${id}/premium-status`
+      const respuesta = await request(app.getHttpServer()).get(path).set(firmar(path)).expect(200)
+
+      expect(respuesta.body).toEqual({ productId: id, premium: true })
+    })
+
     it('sin firma es 401, y el producto no se ve afectado', async () => {
       const id = await crearProducto('corona-siete')
 
