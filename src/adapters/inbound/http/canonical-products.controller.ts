@@ -3,6 +3,7 @@ import {
   ConflictException,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Inject,
@@ -10,10 +11,12 @@ import {
   Param,
   Post,
   Query,
+  Res,
   BadRequestException,
   UnprocessableEntityException,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
+import type { Response } from 'express'
 
 import { DomainError } from '../../../domain/errors/DomainError'
 import {
@@ -30,6 +33,8 @@ import {
 } from '../../../application/errors/ApplicationError'
 import type { CanonicalProductDto } from '../../../application/dto/CanonicalProductDto'
 import type { CreateCanonicalProduct } from '../../../application/use-cases/CreateCanonicalProduct'
+import type { RequestTraceContext } from '../../../application/ports/RequestTraceContext'
+import { resolveCorrelationId } from './correlation-id'
 import {
   ListCatalogStorefront,
   type CatalogStorefrontResult,
@@ -94,14 +99,19 @@ export class CanonicalProductsController {
   async create(
     @Body() body: CreateCanonicalProductRequest,
     @CurrentIdentity() identity: VerifiedIdentity,
+    @Headers('x-correlation-id') rawCorrelationId: string | string[] | undefined,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<CanonicalProductDto> {
+    const trace: RequestTraceContext = { correlationId: resolveCorrelationId(rawCorrelationId) }
+    response.setHeader('x-correlation-id', trace.correlationId)
+
     try {
       const actor = {
         subject: identity.subject,
         email: identity.email ?? undefined,
         role: [...identity.roles][0] ?? undefined,
       }
-      return await this.createCanonicalProduct.execute(body, actor)
+      return await this.createCanonicalProduct.execute(body, actor, trace)
     } catch (error: unknown) {
       throw CanonicalProductsController.translate(error)
     }

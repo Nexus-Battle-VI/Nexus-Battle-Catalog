@@ -20,6 +20,9 @@ import { InMemoryCanonicalProductRepository } from '../../src/adapters/outbound/
 import { HeroSubtypeRegistryV1 } from '../../src/adapters/outbound/registry/HeroSubtypeRegistryV1'
 import type { ClockPort } from '../../src/application/ports/ClockPort'
 import type { IdGeneratorPort } from '../../src/application/ports/IdGeneratorPort'
+import type { RequestTraceContext } from '../../src/application/ports/RequestTraceContext'
+
+const TRACE: RequestTraceContext = { correlationId: 'req-product-assets-test' }
 
 // Fixture helpers for binary images
 const createPngBuffer = (options?: {
@@ -610,7 +613,7 @@ describe('Product Assets Management (HU-33.8 / ADR-016)', () => {
         },
       }
 
-      const created = await createCanonicalProduct.execute(command)
+      const created = await createCanonicalProduct.execute(command, undefined, TRACE)
       expect(created.productId).toBe('f293ce6b-98e9-41da-99ef-0ad4e3a95120')
       expect(created.name).toBe('Espada Nexus')
 
@@ -641,7 +644,7 @@ describe('Product Assets Management (HU-33.8 / ADR-016)', () => {
         },
       }
 
-      await expect(createCanonicalProduct.execute(command)).rejects.toThrow(
+      await expect(createCanonicalProduct.execute(command, undefined, TRACE)).rejects.toThrow(
         ProductAssetInvalidContentError,
       )
     })
@@ -667,7 +670,7 @@ describe('Product Assets Management (HU-33.8 / ADR-016)', () => {
         },
       }
 
-      await expect(createCanonicalProduct.execute(command)).rejects.toThrow(
+      await expect(createCanonicalProduct.execute(command, undefined, TRACE)).rejects.toThrow(
         ProductAssetInvalidContentError,
       )
     })

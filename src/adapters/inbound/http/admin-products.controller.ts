@@ -4,15 +4,18 @@ import {
   ConflictException,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Inject,
   NotFoundException,
   Param,
   Patch,
+  Res,
   UnprocessableEntityException,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger'
+import type { Response } from 'express'
 
 import { DomainError } from '../../../domain/errors/DomainError'
 import {
@@ -26,6 +29,8 @@ import type { GetCanonicalProduct } from '../../../application/use-cases/GetCano
 import type { UpdateProductLifecycleStatus } from '../../../application/use-cases/UpdateProductLifecycleStatus'
 import { Role, type VerifiedIdentity } from '../../../application/ports/TokenVerifierPort'
 import type { AuditActor } from '../../../application/ports/CanonicalProductPorts'
+import type { RequestTraceContext } from '../../../application/ports/RequestTraceContext'
+import { resolveCorrelationId } from './correlation-id'
 import {
   ADJUST_PRODUCT_INVENTORY,
   CONFIGURE_PRODUCT_PREMIUM,
@@ -106,12 +111,18 @@ export class AdminProductsController {
     @Param('id') id: string,
     @Body() body: AdjustInventoryRequest,
     @CurrentIdentity() identity: VerifiedIdentity,
+    @Headers('x-correlation-id') rawCorrelationId: string | string[] | undefined,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<CanonicalProductDto> {
+    const trace: RequestTraceContext = { correlationId: resolveCorrelationId(rawCorrelationId) }
+    response.setHeader('x-correlation-id', trace.correlationId)
+
     try {
       return await this.adjustProductInventory.execute(
         id,
         body,
         AdminProductsController.buildActor(identity),
+        trace,
       )
     } catch (error: unknown) {
       throw AdminProductsController.translate(error)
@@ -143,12 +154,18 @@ export class AdminProductsController {
     @Param('id') id: string,
     @Body() body: ConfigurePremiumRequest,
     @CurrentIdentity() identity: VerifiedIdentity,
+    @Headers('x-correlation-id') rawCorrelationId: string | string[] | undefined,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<CanonicalProductDto> {
+    const trace: RequestTraceContext = { correlationId: resolveCorrelationId(rawCorrelationId) }
+    response.setHeader('x-correlation-id', trace.correlationId)
+
     try {
       return await this.configureProductPremium.execute(
         id,
         body,
         AdminProductsController.buildActor(identity),
+        trace,
       )
     } catch (error: unknown) {
       throw AdminProductsController.translate(error)
@@ -181,12 +198,18 @@ export class AdminProductsController {
     @Param('id') id: string,
     @Body() body: UpdateProductStatusRequest,
     @CurrentIdentity() identity: VerifiedIdentity,
+    @Headers('x-correlation-id') rawCorrelationId: string | string[] | undefined,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<CanonicalProductDto> {
+    const trace: RequestTraceContext = { correlationId: resolveCorrelationId(rawCorrelationId) }
+    response.setHeader('x-correlation-id', trace.correlationId)
+
     try {
       return await this.updateProductLifecycleStatus.execute(
         id,
         body,
         AdminProductsController.buildActor(identity),
+        trace,
       )
     } catch (error: unknown) {
       throw AdminProductsController.translate(error)

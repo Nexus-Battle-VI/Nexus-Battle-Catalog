@@ -20,7 +20,10 @@ import {
 } from '../../src/domain/value-objects/canonical-product-values'
 import { ProductName, Sku } from '../../src/domain/value-objects/catalog-values'
 import { parseProductAttributes } from '../../src/domain/value-objects/product-attributes'
+import type { RequestTraceContext } from '../../src/application/ports/RequestTraceContext'
 
+const TRACE_SUSPEND: RequestTraceContext = { correlationId: 'req-suspend-1' }
+const TRACE_REACTIVATE: RequestTraceContext = { correlationId: 'req-reactivate-1' }
 const ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const AUSENTE = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 const MOTIVO_VALIDO = 'Rebalanceo pendiente de estadísticas'
@@ -147,6 +150,7 @@ describe('HU-35: suspension y reactivacion de producto', () => {
         ID,
         { status: 'SUSPENDED', reason: MOTIVO_VALIDO },
         { subject: 'admin-1' },
+        TRACE_SUSPEND,
       )
 
       expect(dto.lifecycleStatus).toBe(LifecycleStatus.Suspended)
@@ -164,7 +168,12 @@ describe('HU-35: suspension y reactivacion de producto', () => {
       const { uso, products, outbox } = construir()
       await products.create(producto())
 
-      await uso.execute(ID, { status: 'SUSPENDED', reason: MOTIVO_VALIDO }, { subject: 'admin-1' })
+      await uso.execute(
+        ID,
+        { status: 'SUSPENDED', reason: MOTIVO_VALIDO },
+        { subject: 'admin-1' },
+        TRACE_SUSPEND,
+      )
 
       const [evento] = await outbox.claim('prueba', 10, 1_000)
 
@@ -172,19 +181,26 @@ describe('HU-35: suspension y reactivacion de producto', () => {
         aggregateId: ID,
         aggregateType: 'CanonicalProduct',
         eventType: 'catalog.product.suspended',
+        correlationId: TRACE_SUSPEND.correlationId,
       })
     })
 
     it('deja el evento de reactivacion en el outbox con el productId esperado', async () => {
       const { uso, products, outbox } = construir()
       await products.create(producto())
-      await uso.execute(ID, { status: 'SUSPENDED', reason: MOTIVO_VALIDO }, { subject: 'admin-1' })
+      await uso.execute(
+        ID,
+        { status: 'SUSPENDED', reason: MOTIVO_VALIDO },
+        { subject: 'admin-1' },
+        TRACE_SUSPEND,
+      )
       await outbox.claim('prueba', 10, 1_000)
 
       await uso.execute(
         ID,
         { status: 'ACTIVE', reason: 'Rebalanceo completado, producto listo' },
         { subject: 'admin-1' },
+        TRACE_REACTIVATE,
       )
 
       const [evento] = await outbox.claim('prueba', 10, 1_000)
@@ -193,6 +209,7 @@ describe('HU-35: suspension y reactivacion de producto', () => {
         aggregateId: ID,
         aggregateType: 'CanonicalProduct',
         eventType: 'catalog.product.reactivated',
+        correlationId: TRACE_REACTIVATE.correlationId,
       })
     })
 
@@ -200,7 +217,12 @@ describe('HU-35: suspension y reactivacion de producto', () => {
       const { uso, products } = construir()
       await products.create(producto())
 
-      await uso.execute(ID, { status: 'SUSPENDED', reason: MOTIVO_VALIDO }, { subject: 'admin-1' })
+      await uso.execute(
+        ID,
+        { status: 'SUSPENDED', reason: MOTIVO_VALIDO },
+        { subject: 'admin-1' },
+        TRACE_SUSPEND,
+      )
 
       const encontrado = await products.findById(ProductId.create(ID))
 
@@ -213,11 +235,17 @@ describe('HU-35: suspension y reactivacion de producto', () => {
       const { uso, products, audit, outbox } = construir()
       await products.create(producto())
 
-      await uso.execute(ID, { status: 'SUSPENDED', reason: MOTIVO_VALIDO }, { subject: 'admin-1' })
+      await uso.execute(
+        ID,
+        { status: 'SUSPENDED', reason: MOTIVO_VALIDO },
+        { subject: 'admin-1' },
+        TRACE_SUSPEND,
+      )
       const segunda = await uso.execute(
         ID,
         { status: 'SUSPENDED', reason: MOTIVO_VALIDO },
         { subject: 'admin-2' },
+        TRACE_SUSPEND,
       )
 
       expect(segunda.lifecycleStatus).toBe(LifecycleStatus.Suspended)
@@ -231,12 +259,18 @@ describe('HU-35: suspension y reactivacion de producto', () => {
     it('CA-03: reactiva un producto suspendido y registra auditoria de reactivacion', async () => {
       const { uso, products, audit } = construir()
       await products.create(producto())
-      await uso.execute(ID, { status: 'SUSPENDED', reason: MOTIVO_VALIDO }, { subject: 'admin-1' })
+      await uso.execute(
+        ID,
+        { status: 'SUSPENDED', reason: MOTIVO_VALIDO },
+        { subject: 'admin-1' },
+        TRACE_SUSPEND,
+      )
 
       const dto = await uso.execute(
         ID,
         { status: 'ACTIVE', reason: 'Rebalanceo completado, producto listo' },
         { subject: 'admin-1' },
+        TRACE_REACTIVATE,
       )
 
       expect(dto.lifecycleStatus).toBe(LifecycleStatus.Active)
@@ -251,7 +285,12 @@ describe('HU-35: suspension y reactivacion de producto', () => {
       const { uso, products, audit } = construir()
       await products.create(producto())
 
-      await uso.execute(ID, { status: 'ACTIVE', reason: MOTIVO_VALIDO }, { subject: 'admin-1' })
+      await uso.execute(
+        ID,
+        { status: 'ACTIVE', reason: MOTIVO_VALIDO },
+        { subject: 'admin-1' },
+        TRACE_REACTIVATE,
+      )
 
       await expect(audit.findByAggregateId(ID)).resolves.toHaveLength(0)
     })
@@ -261,7 +300,7 @@ describe('HU-35: suspension y reactivacion de producto', () => {
       await products.create(producto())
 
       await expect(
-        uso.execute(ID, { status: 'SUSPENDED' }, { subject: 'admin-1' }),
+        uso.execute(ID, { status: 'SUSPENDED' }, { subject: 'admin-1' }, TRACE_SUSPEND),
       ).rejects.toThrow(DomainError)
     })
 
@@ -270,7 +309,12 @@ describe('HU-35: suspension y reactivacion de producto', () => {
       await products.create(producto())
 
       await expect(
-        uso.execute(ID, { status: 'SUSPENDED', reason: 'muy corto' }, { subject: 'admin-1' }),
+        uso.execute(
+          ID,
+          { status: 'SUSPENDED', reason: 'muy corto' },
+          { subject: 'admin-1' },
+          TRACE_SUSPEND,
+        ),
       ).rejects.toThrow(/al menos 10 caracteres/u)
     })
 
@@ -279,7 +323,12 @@ describe('HU-35: suspension y reactivacion de producto', () => {
       await products.create(producto())
 
       await expect(
-        uso.execute(ID, { status: 'SUSPENDED', reason: 'corto' }, { subject: 'admin-1' }),
+        uso.execute(
+          ID,
+          { status: 'SUSPENDED', reason: 'corto' },
+          { subject: 'admin-1' },
+          TRACE_SUSPEND,
+        ),
       ).rejects.toThrow(DomainError)
 
       const sinCambios = await products.findById(ProductId.create(ID))
@@ -292,7 +341,12 @@ describe('HU-35: suspension y reactivacion de producto', () => {
       await products.create(producto())
 
       await expect(
-        uso.execute(ID, { status: 'ARCHIVED', reason: MOTIVO_VALIDO }, { subject: 'admin-1' }),
+        uso.execute(
+          ID,
+          { status: 'ARCHIVED', reason: MOTIVO_VALIDO },
+          { subject: 'admin-1' },
+          TRACE_SUSPEND,
+        ),
       ).rejects.toThrow(DomainError)
     })
 
@@ -305,6 +359,7 @@ describe('HU-35: suspension y reactivacion de producto', () => {
           ID,
           { status: 'SUSPENDED', reason: MOTIVO_VALIDO, force: true },
           { subject: 'admin-1' },
+          TRACE_SUSPEND,
         ),
       ).rejects.toThrow(DomainError)
     })
@@ -317,6 +372,7 @@ describe('HU-35: suspension y reactivacion de producto', () => {
           AUSENTE,
           { status: 'SUSPENDED', reason: MOTIVO_VALIDO },
           { subject: 'admin-1' },
+          TRACE_SUSPEND,
         ),
       ).rejects.toThrow(CanonicalProductNotFoundError)
     })
@@ -350,6 +406,7 @@ describe('HU-35: suspension y reactivacion de producto', () => {
         ID,
         { status: 'SUSPENDED', reason: MOTIVO_VALIDO },
         { subject: 'admin-1' },
+        TRACE_SUSPEND,
       )
 
       await expect(

@@ -22,8 +22,10 @@ import {
   type ProductAuditEntry,
   type ProductReferenceQueryPort,
 } from '../../src/application/ports/CanonicalProductPorts'
+import type { RequestTraceContext } from '../../src/application/ports/RequestTraceContext'
 import { HeroSubtypeRegistryV1 } from '../../src/adapters/outbound/registry/HeroSubtypeRegistryV1'
 
+const TRACE: RequestTraceContext = { correlationId: 'req-create-canonical-product-test' }
 const NOW = new Date('2026-08-31T20:00:00.000Z')
 const PRODUCT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const ABILITY_IDS = [
@@ -145,7 +147,7 @@ describe('CreateCanonicalProduct', () => {
   it('crea una proyeccion canónica activa y guarda el agregado', async () => {
     const harness = buildHarness()
 
-    const result = await harness.useCase.execute(heroCommand())
+    const result = await harness.useCase.execute(heroCommand(), undefined, TRACE)
 
     expect(result).toMatchObject({
       productId: PRODUCT_ID,
@@ -169,7 +171,11 @@ describe('CreateCanonicalProduct', () => {
   it('normaliza nombre para la consulta de unicidad por tipo', async () => {
     const harness = buildHarness()
 
-    await harness.useCase.execute({ ...heroCommand(), name: '  GUERRERO   de Acero  ' })
+    await harness.useCase.execute(
+      { ...heroCommand(), name: '  GUERRERO   de Acero  ' },
+      undefined,
+      TRACE,
+    )
 
     expect(harness.products.checkedName).toBe('guerrero de acero')
     expect(harness.products.checkedType).toBe(ProductType.Hero)
@@ -180,7 +186,7 @@ describe('CreateCanonicalProduct', () => {
     const command = heroCommand() as Record<string, unknown>
     delete command.sku
 
-    await expect(harness.useCase.execute(command)).resolves.toMatchObject({
+    await expect(harness.useCase.execute(command, undefined, TRACE)).resolves.toMatchObject({
       productId: PRODUCT_ID,
       sku: 'guerrero-de-acero-aaaaaaaa',
     })
@@ -190,7 +196,7 @@ describe('CreateCanonicalProduct', () => {
     const harness = buildHarness()
     harness.products.duplicate = true
 
-    await expect(harness.useCase.execute(heroCommand())).rejects.toBeInstanceOf(
+    await expect(harness.useCase.execute(heroCommand(), undefined, TRACE)).rejects.toBeInstanceOf(
       CanonicalProductAlreadyExistsError,
     )
     expect(harness.products.created).toHaveLength(0)
@@ -202,7 +208,9 @@ describe('CreateCanonicalProduct', () => {
     const command = heroCommand() as { attributes: { values: { heroSubtype: string } } }
     command.attributes.values.heroSubtype = 'MASTER'
 
-    await expect(harness.useCase.execute(command)).rejects.toBeInstanceOf(InvalidHeroSubtypeError)
+    await expect(harness.useCase.execute(command, undefined, TRACE)).rejects.toBeInstanceOf(
+      InvalidHeroSubtypeError,
+    )
     expect(harness.products.created).toHaveLength(0)
   })
 
@@ -213,7 +221,7 @@ describe('CreateCanonicalProduct', () => {
     }
     command.attributes.values.heroSubtype = 'CHAMAN'
 
-    await expect(harness.useCase.execute(command)).rejects.toBeInstanceOf(
+    await expect(harness.useCase.execute(command, undefined, TRACE)).rejects.toBeInstanceOf(
       HeroSubtypeBranchMismatchError,
     )
   })
@@ -222,7 +230,7 @@ describe('CreateCanonicalProduct', () => {
     const harness = buildHarness()
     harness.references.types.set(ABILITY_IDS[1], ProductType.Weapon)
 
-    await expect(harness.useCase.execute(heroCommand())).rejects.toBeInstanceOf(
+    await expect(harness.useCase.execute(heroCommand(), undefined, TRACE)).rejects.toBeInstanceOf(
       InvalidAbilityReferenceError,
     )
     expect(harness.products.created).toHaveLength(0)
@@ -230,13 +238,17 @@ describe('CreateCanonicalProduct', () => {
 
   it('crea un producto premium con importe real positivo', async () => {
     const harness = buildHarness()
-    const result = await harness.useCase.execute({
-      ...heroCommand(),
-      sku: 'guerrero-premium',
-      premium: true,
-      realMoneyPrice: { amount: 999, currency: 'USD' },
-      printRun: -1,
-    })
+    const result = await harness.useCase.execute(
+      {
+        ...heroCommand(),
+        sku: 'guerrero-premium',
+        premium: true,
+        realMoneyPrice: { amount: 999, currency: 'USD' },
+        printRun: -1,
+      },
+      undefined,
+      TRACE,
+    )
 
     expect(result).toMatchObject({
       premium: true,
@@ -255,7 +267,7 @@ describe('CreateCanonicalProduct', () => {
     delete command.attributes.values.baseDamage
     command.attributes.values.baseHealing = { mode: 'FIXED', amount: 5 }
 
-    await expect(harness.useCase.execute(command)).resolves.toMatchObject({
+    await expect(harness.useCase.execute(command, undefined, TRACE)).resolves.toMatchObject({
       attributes: { values: { kind: ProductType.Hero, heroSubtype: 'CHAMAN' } },
     })
   })
@@ -273,7 +285,9 @@ describe('CreateCanonicalProduct', () => {
   ])('rechaza %s sin escribir', async (_case, command) => {
     const harness = buildHarness()
 
-    await expect(harness.useCase.execute(command)).rejects.toBeInstanceOf(DomainError)
+    await expect(harness.useCase.execute(command, undefined, TRACE)).rejects.toBeInstanceOf(
+      DomainError,
+    )
     expect(harness.products.created).toHaveLength(0)
   })
 
@@ -317,7 +331,8 @@ describe('CreateCanonicalProduct', () => {
     })
 
     const actor = { subject: 'admin-user-1', email: 'admin@example.test', role: 'ADMINISTRATOR' }
-    const result = await useCase.execute(heroCommand(), actor)
+    const trace: RequestTraceContext = { correlationId: 'req-create-1' }
+    const result = await useCase.execute(heroCommand(), actor, trace)
 
     expect(result.version).toBe(0)
     expect(executedTx).toBe(1)
@@ -343,6 +358,7 @@ describe('CreateCanonicalProduct', () => {
       eventVersion: 1,
       status: 'PENDING',
       attempts: 0,
+      correlationId: 'req-create-1',
     })
     expect(outboxEntries[0]?.payload).toMatchObject({ productId: PRODUCT_ID, version: 0 })
   })
@@ -363,7 +379,9 @@ describe('CreateCanonicalProduct', () => {
       },
     })
 
-    await expect(useCase.execute(heroCommand())).rejects.toThrow('Fallo forzado en transaccion')
+    await expect(useCase.execute(heroCommand(), undefined, TRACE)).rejects.toThrow(
+      'Fallo forzado en transaccion',
+    )
   })
 })
 

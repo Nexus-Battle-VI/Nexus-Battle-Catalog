@@ -16,7 +16,9 @@ import {
 } from '../../src/domain/value-objects/canonical-product-values'
 import { ProductName, Sku } from '../../src/domain/value-objects/catalog-values'
 import { parseProductAttributes } from '../../src/domain/value-objects/product-attributes'
+import type { RequestTraceContext } from '../../src/application/ports/RequestTraceContext'
 
+const TRACE: RequestTraceContext = { correlationId: 'req-inventory-1' }
 const ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const AUSENTE = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 
@@ -172,7 +174,7 @@ describe('HU-34: configuracion del tiraje', () => {
       const { uso, products, audit } = construir()
       await products.create(conEntregadas(200, 200))
 
-      const dto = await uso.execute(ID, { printRun: 350 }, { subject: 'admin-1' })
+      const dto = await uso.execute(ID, { printRun: 350 }, { subject: 'admin-1' }, TRACE)
 
       expect(dto.printRun).toBe(350)
       expect(dto.availableUnits).toBe(150)
@@ -192,7 +194,7 @@ describe('HU-34: configuracion del tiraje', () => {
       const { uso, products, audit } = construir()
       await products.create(conEntregadas(10, 4))
 
-      await expect(uso.execute(ID, { printRun: 3 }, { subject: 'admin-1' })).rejects.toThrow(
+      await expect(uso.execute(ID, { printRun: 3 }, { subject: 'admin-1' }, TRACE)).rejects.toThrow(
         DomainError,
       )
 
@@ -207,9 +209,9 @@ describe('HU-34: configuracion del tiraje', () => {
     it('un producto inexistente es 404, no 422', async () => {
       const { uso } = construir()
 
-      await expect(uso.execute(AUSENTE, { printRun: 5 }, { subject: 'admin-1' })).rejects.toThrow(
-        CanonicalProductNotFoundError,
-      )
+      await expect(
+        uso.execute(AUSENTE, { printRun: 5 }, { subject: 'admin-1' }, TRACE),
+      ).rejects.toThrow(CanonicalProductNotFoundError)
     })
 
     it('rechaza campos no declarados en el cuerpo', async () => {
@@ -217,7 +219,7 @@ describe('HU-34: configuracion del tiraje', () => {
       await products.create(producto(10))
 
       await expect(
-        uso.execute(ID, { printRun: 20, availableUnits: 999 }, { subject: 'admin-1' }),
+        uso.execute(ID, { printRun: 20, availableUnits: 999 }, { subject: 'admin-1' }, TRACE),
       ).rejects.toThrow(DomainError)
     })
 
@@ -225,11 +227,13 @@ describe('HU-34: configuracion del tiraje', () => {
       const { uso, products, outbox } = construir()
       await products.create(producto(10))
 
-      await uso.execute(ID, { printRun: 20 }, { subject: 'admin-1' })
+      await uso.execute(ID, { printRun: 20 }, { subject: 'admin-1' }, TRACE)
 
       const pendientes = await outbox.claim('prueba', 10, 1_000)
 
       expect(pendientes.map((e) => e.eventType)).toContain('catalog.product.inventory.adjusted')
+      const ajuste = pendientes.find((e) => e.eventType === 'catalog.product.inventory.adjusted')
+      expect(ajuste?.correlationId).toBe(TRACE.correlationId)
     })
   })
 })

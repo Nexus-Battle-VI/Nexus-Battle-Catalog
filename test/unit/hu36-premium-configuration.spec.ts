@@ -16,7 +16,9 @@ import {
 } from '../../src/domain/value-objects/canonical-product-values'
 import { Money, ProductName, Sku } from '../../src/domain/value-objects/catalog-values'
 import { parseProductAttributes } from '../../src/domain/value-objects/product-attributes'
+import type { RequestTraceContext } from '../../src/application/ports/RequestTraceContext'
 
+const TRACE: RequestTraceContext = { correlationId: 'req-premium-1' }
 const ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const AUSENTE = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 
@@ -163,6 +165,7 @@ describe('HU-36: producto premium y precio en moneda real', () => {
         ID,
         { premium: true, realMoneyPrice: { amount: 999, currency: 'USD' } },
         { subject: 'admin-1' },
+        TRACE,
       )
 
       expect(dto.premium).toBe(true)
@@ -182,9 +185,9 @@ describe('HU-36: producto premium y precio en moneda real', () => {
       const { uso, products, audit } = construir()
       await products.create(producto(false))
 
-      await expect(uso.execute(ID, { premium: true }, { subject: 'admin-1' })).rejects.toThrow(
-        DomainError,
-      )
+      await expect(
+        uso.execute(ID, { premium: true }, { subject: 'admin-1' }, TRACE),
+      ).rejects.toThrow(DomainError)
 
       const sinCambios = await products.findById(ProductId.create(ID))
 
@@ -196,9 +199,9 @@ describe('HU-36: producto premium y precio en moneda real', () => {
       const { uso, products } = construir()
       await products.create(producto(true, Money.create(999, 'USD')))
 
-      await expect(uso.execute(ID, { premium: false }, { subject: 'admin-1' })).rejects.toThrow(
-        /no esta soportado todavia/u,
-      )
+      await expect(
+        uso.execute(ID, { premium: false }, { subject: 'admin-1' }, TRACE),
+      ).rejects.toThrow(/no esta soportado todavia/u)
 
       const sinCambios = await products.findById(ProductId.create(ID))
 
@@ -215,6 +218,7 @@ describe('HU-36: producto premium y precio en moneda real', () => {
           {
             subject: 'admin-1',
           },
+          TRACE,
         ),
       ).rejects.toThrow(CanonicalProductNotFoundError)
     })
@@ -224,7 +228,7 @@ describe('HU-36: producto premium y precio en moneda real', () => {
       await products.create(producto(false))
 
       await expect(
-        uso.execute(ID, { premium: true, creditsPrice: 999 }, { subject: 'admin-1' }),
+        uso.execute(ID, { premium: true, creditsPrice: 999 }, { subject: 'admin-1' }, TRACE),
       ).rejects.toThrow(DomainError)
     })
 
@@ -236,11 +240,16 @@ describe('HU-36: producto premium y precio en moneda real', () => {
         ID,
         { premium: true, realMoneyPrice: { amount: 999, currency: 'USD' } },
         { subject: 'admin-1' },
+        TRACE,
       )
 
       const pendientes = await outbox.claim('prueba', 10, 1_000)
 
       expect(pendientes.map((e) => e.eventType)).toContain('catalog.product.premium.configured')
+      const configurado = pendientes.find(
+        (e) => e.eventType === 'catalog.product.premium.configured',
+      )
+      expect(configurado?.correlationId).toBe(TRACE.correlationId)
     })
   })
 })
