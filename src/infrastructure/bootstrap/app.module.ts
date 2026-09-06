@@ -37,6 +37,14 @@ import { InMemoryProductAcquisitionRepository } from '../../adapters/outbound/pe
 import { AdminProductAssetsController } from '../../adapters/inbound/http/admin-product-assets.controller'
 import { CatalogProductAssetsController } from '../../adapters/inbound/http/catalog-product-assets.controller'
 import { HealthController } from '../../adapters/inbound/http/health.controller'
+import { DispatchProductOutbox } from '../../application/use-cases/DispatchProductOutbox'
+import {
+  PRODUCT_EVENT_PUBLISHER_PORT,
+  type ProductEventPublisherPort,
+} from '../../application/ports/ProductEventPublisherPort'
+import { InMemoryProductEventPublisher } from '../../adapters/outbound/messaging/InMemoryProductEventPublisher'
+import { SqsProductEventPublisher } from '../../adapters/outbound/messaging/SqsProductEventPublisher'
+import { OutboxDispatcherWorker } from '../messaging/OutboxDispatcherWorker'
 import {
   ARCHIVE_PRODUCT,
   CHANGE_PRICE,
@@ -145,6 +153,8 @@ export const APP_CONFIG = Symbol('AppConfig')
 export const LOGGER = Symbol('Logger')
 export const CATALOG_MONGO_CLIENT = Symbol('CatalogMongoClient')
 const CATALOG_DATABASE = Symbol('CatalogDatabase')
+const DISPATCH_PRODUCT_OUTBOX = Symbol('DispatchProductOutbox')
+const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
 
 /**
  * Raiz de composicion.
@@ -741,6 +751,70 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         nodeEnv: config.nodeEnv,
       }),
       inject: [APP_CONFIG],
+    },
+    {
+      // HU-38: fuera del despacho activo no hace falta un SQSClient real -el
+      // worker deshabilitado nunca llama a publish()-, asi que el default
+      // seguro es el doble en memoria, igual que el resto de adaptadores
+      // "memory" de este modulo.
+      provide: PRODUCT_EVENT_PUBLISHER_PORT,
+      useFactory: (config: AppConfig): ProductEventPublisherPort => {
+        const { eventDispatch } = config
+
+        if (!eventDispatch.enabled) {
+          return new InMemoryProductEventPublisher()
+        }
+
+        const { awsRegion, eventsQueueUrl, lifecycleQueueUrl } = eventDispatch
+
+        // `loadConfig` ya garantiza estos tres campos no nulos cuando
+        // `enabled` es true (fail closed); la comprobacion es solo para que
+        // el compilador estreche el tipo sin recurrir a una aserción.
+        if (awsRegion === null || eventsQueueUrl === null || lifecycleQueueUrl === null) {
+          throw new Error(
+            'CATALOG_EVENT_DISPATCH_ENABLED=true sin AWS_REGION/CATALOG_EVENTS_QUEUE_URL/' +
+              'CATALOG_LIFECYCLE_QUEUE_URL: loadConfig deberia haberlo rechazado antes.',
+          )
+        }
+
+        return new SqsProductEventPublisher({
+          region: awsRegion,
+          eventsQueueUrl,
+          lifecycleQueueUrl,
+        })
+      },
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: DISPATCH_PRODUCT_OUTBOX,
+      useFactory: (
+        outbox: ProductOutboxPort,
+        publisher: ProductEventPublisherPort,
+        logger: Logger,
+        idGenerator: IdGeneratorPort,
+        config: AppConfig,
+      ): DispatchProductOutbox =>
+        new DispatchProductOutbox({
+          outbox,
+          publisher,
+          logger,
+          workerId: `catalog-dispatcher-${idGenerator.generate()}`,
+          batchSize: config.eventDispatch.batchSize,
+        }),
+      inject: [PRODUCT_OUTBOX_PORT, PRODUCT_EVENT_PUBLISHER_PORT, LOGGER, ID_GENERATOR, APP_CONFIG],
+    },
+    {
+      // Registrado como provider para que Nest invoque sus hooks de ciclo de
+      // vida (`OnApplicationBootstrap`/`OnApplicationShutdown`) aunque ningun
+      // otro provider lo inyecte.
+      provide: OUTBOX_DISPATCHER_WORKER,
+      useFactory: (
+        dispatcher: DispatchProductOutbox,
+        config: AppConfig,
+        logger: Logger,
+      ): OutboxDispatcherWorker =>
+        new OutboxDispatcherWorker({ enabled: config.eventDispatch.enabled, dispatcher, logger }),
+      inject: [DISPATCH_PRODUCT_OUTBOX, APP_CONFIG, LOGGER],
     },
   ],
 })

@@ -27,6 +27,7 @@ export interface OutboxDocument {
   lastError?: string | null
   dispatchedAt?: Date | null
   purgeAt?: Date | null
+  correlationId?: string | null
 }
 
 /**
@@ -64,6 +65,7 @@ export class MongoProductOutboxRepository implements ProductOutboxPort {
       lastError: entry.lastError ?? null,
       dispatchedAt: entry.dispatchedAt ? new Date(entry.dispatchedAt) : null,
       purgeAt: entry.purgeAt ? new Date(entry.purgeAt) : null,
+      correlationId: entry.correlationId ?? null,
     }
 
     await this.outbox.insertOne(document, { session })
@@ -73,14 +75,20 @@ export class MongoProductOutboxRepository implements ProductOutboxPort {
     workerId: string,
     limit: number,
     leaseDurationMs: number,
+    allowedEventTypes?: readonly string[],
   ): Promise<readonly OutboxEntry[]> {
     const now = new Date()
     const leaseExpiresAt = new Date(now.getTime() + leaseDurationMs)
     const claimed: OutboxEntry[] = []
+    const eventTypeFilter =
+      allowedEventTypes && allowedEventTypes.length > 0
+        ? { eventType: { $in: [...allowedEventTypes] } }
+        : {}
 
     for (let i = 0; i < limit; i += 1) {
       const result = await this.outbox.findOneAndUpdate(
         {
+          ...eventTypeFilter,
           $or: [
             { status: OutboxStatus.Pending },
             {
@@ -176,6 +184,7 @@ export class MongoProductOutboxRepository implements ProductOutboxPort {
       lastError: doc.lastError ?? null,
       dispatchedAt: doc.dispatchedAt ?? null,
       purgeAt: doc.purgeAt ?? null,
+      correlationId: doc.correlationId ?? null,
     }
   }
 }

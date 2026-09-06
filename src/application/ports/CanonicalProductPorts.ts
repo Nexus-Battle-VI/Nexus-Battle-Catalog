@@ -189,12 +189,33 @@ export interface OutboxEntry {
   readonly lastError?: string | null
   readonly dispatchedAt?: Date | null
   readonly purgeAt?: Date | null
+  /**
+   * Trazabilidad de la solicitud original que produjo el hecho (ADR-017,
+   * AsyncAPI `catalog-events-v1`). Ningun caso de uso actual la conserva
+   * -auditado en codigo, no existe contexto de peticion capturado en
+   * Catalog- por lo que hoy llega `null`/ausente en todo evento real. El
+   * campo se declara aqui, aditivo, para que un futuro cambio que si capture
+   * esa trazabilidad no necesite otro rediseno del Outbox (HU-38, ver
+   * `ProductEventEnvelopeFactory`).
+   */
+  readonly correlationId?: string | null
 }
 
 /** Puerto para el Outbox persistente con soporte de lease y reintentos. */
 export interface ProductOutboxPort {
   record(entry: OutboxEntry, context?: TransactionContext): Promise<void>
-  claim(workerId: string, limit: number, leaseDurationMs: number): Promise<readonly OutboxEntry[]>
+  /**
+   * `allowedEventTypes`, si se informa, restringe el reclamo a esos
+   * `eventType` exactos (allowlist). Cualquier otro evento del outbox -por
+   * ejemplo uno todavia sin transporte aprobado- permanece intacto en su
+   * estado actual, sin reclamarse ni tocarse (HU-38).
+   */
+  claim(
+    workerId: string,
+    limit: number,
+    leaseDurationMs: number,
+    allowedEventTypes?: readonly string[],
+  ): Promise<readonly OutboxEntry[]>
   complete(eventId: string, context?: TransactionContext): Promise<void>
   fail(eventId: string, error: string, maxAttempts?: number): Promise<void>
 }
