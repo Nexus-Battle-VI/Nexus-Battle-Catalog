@@ -17,6 +17,14 @@ import {
   MfaEvidenceOutcome,
   type MfaEvidenceVerifierPort,
 } from '../../src/application/ports/MfaEvidenceVerifierPort'
+import {
+  INTERNAL_SERVICE_HEADER,
+  INTERNAL_SIGNATURE_HEADER,
+  INTERNAL_TIMESTAMP_HEADER,
+  signInternalRequest,
+} from '../../src/adapters/outbound/identity/internal-signature'
+
+const SECRETO_DE_PRUEBAS = 'secreto-ficticio-solo-para-pruebas'
 
 /**
  * HU-35 sobre HTTP: suspension (borrado logico) y reactivacion de producto,
@@ -31,6 +39,14 @@ const ADMIN: VerifiedIdentity = {
   expiresAt: new Date(Date.now() + 900_000),
 }
 
+const SUPER_ADMIN: VerifiedIdentity = {
+  subject: 'sujeto-super-admin',
+  email: null,
+  roles: new Set([Role.Player, Role.SuperAdministrator]),
+  jti: 'jti-super-admin',
+  expiresAt: new Date(Date.now() + 900_000),
+}
+
 const MODERADOR: VerifiedIdentity = {
   subject: 'sujeto-moderador',
   email: null,
@@ -41,6 +57,7 @@ const MODERADOR: VerifiedIdentity = {
 
 const IDENTITIES: Readonly<Record<string, VerifiedIdentity>> = {
   'token-admin': ADMIN,
+  'token-super-admin': SUPER_ADMIN,
   'token-moderador': MODERADOR,
 }
 
@@ -104,7 +121,7 @@ describe('HU-35 sobre HTTP', () => {
     process.env.AUTH_MODE = 'jwt'
     process.env.COGNITO_USER_POOL_ID = 'us-east-1_pruebas'
     process.env.COGNITO_CLIENT_ID = 'cliente-de-pruebas'
-    process.env.INTERNAL_SERVICE_AUTH_SECRET = 'secreto-ficticio-solo-para-pruebas'
+    process.env.INTERNAL_SERVICE_AUTH_SECRET = SECRETO_DE_PRUEBAS
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(TOKEN_VERIFIER)
@@ -136,6 +153,18 @@ describe('HU-35 sobre HTTP', () => {
       const respuesta = await request(app.getHttpServer())
         .patch(`/api/v1/admin/products/${id}/status`)
         .set('Authorization', 'Bearer token-admin')
+        .send({ status: 'SUSPENDED', reason: MOTIVO_VALIDO })
+        .expect(200)
+
+      expect(respuesta.body).toMatchObject({ lifecycleStatus: 'SUSPENDED' })
+    })
+
+    it('un Super Administrador tambien puede suspender (la jerarquia de RolesGuard lo cubre)', async () => {
+      const id = await crearProducto('mago-uno-b')
+
+      const respuesta = await request(app.getHttpServer())
+        .patch(`/api/v1/admin/products/${id}/status`)
+        .set('Authorization', 'Bearer token-super-admin')
         .send({ status: 'SUSPENDED', reason: MOTIVO_VALIDO })
         .expect(200)
 
@@ -235,6 +264,94 @@ describe('HU-35 sobre HTTP', () => {
         .expect(200)
 
       expect(reactivado.body).toMatchObject({ lifecycleStatus: 'ACTIVE' })
+    })
+
+    it('idempotencia: reactivar un producto ya activo responde 200 informativo', async () => {
+      const id = await crearProducto('mago-ocho')
+
+      const respuesta = await request(app.getHttpServer())
+        .patch(`/api/v1/admin/products/${id}/status`)
+        .set('Authorization', 'Bearer token-admin')
+        .send({ status: 'ACTIVE', reason: MOTIVO_VALIDO })
+        .expect(200)
+
+      expect(respuesta.body).toMatchObject({ lifecycleStatus: 'ACTIVE' })
+    })
+  })
+
+  describe('POST /api/internal/v1/catalog/products/{id}/acquisitions tras la suspension', () => {
+    const firmar = (path: string, body: Record<string, unknown>): Record<string, string> => {
+      const timestamp = String(Date.now())
+
+      return {
+        [INTERNAL_SERVICE_HEADER]: 'commerce',
+        [INTERNAL_TIMESTAMP_HEADER]: timestamp,
+        [INTERNAL_SIGNATURE_HEADER]: signInternalRequest(SECRETO_DE_PRUEBAS, {
+          service: 'commerce',
+          method: 'POST',
+          path,
+          timestamp,
+          body,
+        }),
+      }
+    }
+
+    it('un producto suspendido rechaza nuevas adquisiciones (409), sin decrementar', async () => {
+      const id = await crearProducto('mago-nueve')
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/admin/products/${id}/status`)
+        .set('Authorization', 'Bearer token-admin')
+        .send({ status: 'SUSPENDED', reason: MOTIVO_VALIDO })
+        .expect(200)
+
+      const path = `/api/internal/v1/catalog/products/${id}/acquisitions`
+      const cuerpo = {
+        acquisitionId: '88888888-8888-4888-8888-888888888888',
+        playerId: 'jugador-1',
+      }
+
+      await request(app.getHttpServer())
+        .post(path)
+        .set(firmar(path, cuerpo))
+        .send(cuerpo)
+        .expect(409)
+
+      const estado = await request(app.getHttpServer())
+        .get(`/api/v1/admin/products/${id}`)
+        .set('Authorization', 'Bearer token-admin')
+        .expect(200)
+
+      expect(estado.body).toMatchObject({ lifecycleStatus: 'SUSPENDED', availableUnits: 300 })
+    })
+
+    it('CA-03: reactivar un producto agotado conserva el indicador de agotado (0 disponibles)', async () => {
+      const id = await crearProducto('mago-diez', 1)
+      const path = `/api/internal/v1/catalog/products/${id}/acquisitions`
+      const cuerpo = {
+        acquisitionId: '99999999-9999-4999-8999-999999999999',
+        playerId: 'jugador-1',
+      }
+
+      await request(app.getHttpServer())
+        .post(path)
+        .set(firmar(path, cuerpo))
+        .send(cuerpo)
+        .expect(200)
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/admin/products/${id}/status`)
+        .set('Authorization', 'Bearer token-admin')
+        .send({ status: 'SUSPENDED', reason: MOTIVO_VALIDO })
+        .expect(200)
+
+      const reactivado = await request(app.getHttpServer())
+        .patch(`/api/v1/admin/products/${id}/status`)
+        .set('Authorization', 'Bearer token-admin')
+        .send({ status: 'ACTIVE', reason: 'Rebalanceo completado, producto listo' })
+        .expect(200)
+
+      expect(reactivado.body).toMatchObject({ lifecycleStatus: 'ACTIVE', availableUnits: 0 })
     })
   })
 })

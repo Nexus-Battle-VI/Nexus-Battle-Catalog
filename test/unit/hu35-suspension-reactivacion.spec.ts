@@ -1,5 +1,8 @@
 import { UpdateProductLifecycleStatus } from '../../src/application/use-cases/UpdateProductLifecycleStatus'
+import { AcquireProductUnit } from '../../src/application/use-cases/AcquireProductUnit'
+import { StockReservationConflictError } from '../../src/application/use-cases/StockReservations'
 import { InMemoryCanonicalProductRepository } from '../../src/adapters/outbound/persistence/InMemoryCanonicalProductRepository'
+import { InMemoryProductAcquisitionRepository } from '../../src/adapters/outbound/persistence/InMemoryProductAcquisitionRepository'
 import { InMemoryProductAuditRepository } from '../../src/adapters/outbound/persistence/InMemoryProductAuditRepository'
 import { InMemoryProductOutboxRepository } from '../../src/adapters/outbound/persistence/InMemoryProductOutboxRepository'
 import { CanonicalProductNotFoundError } from '../../src/application/errors/ApplicationError'
@@ -157,15 +160,53 @@ describe('HU-35: suspension y reactivacion de producto', () => {
       expect(registros[0]?.timestamp).toEqual(new Date('2026-09-05T10:00:00.000Z'))
     })
 
-    it('deja el evento de suspension en el outbox (contrato del productor para HU-038)', async () => {
+    it('deja el evento de suspension en el outbox con el productId esperado (contrato del productor para HU-038)', async () => {
       const { uso, products, outbox } = construir()
       await products.create(producto())
 
       await uso.execute(ID, { status: 'SUSPENDED', reason: MOTIVO_VALIDO }, { subject: 'admin-1' })
 
-      const pendientes = await outbox.claim('prueba', 10, 1_000)
+      const [evento] = await outbox.claim('prueba', 10, 1_000)
 
-      expect(pendientes.map((e) => e.eventType)).toContain('catalog.product.suspended')
+      expect(evento).toMatchObject({
+        aggregateId: ID,
+        aggregateType: 'CanonicalProduct',
+        eventType: 'catalog.product.suspended',
+      })
+    })
+
+    it('deja el evento de reactivacion en el outbox con el productId esperado', async () => {
+      const { uso, products, outbox } = construir()
+      await products.create(producto())
+      await uso.execute(ID, { status: 'SUSPENDED', reason: MOTIVO_VALIDO }, { subject: 'admin-1' })
+      await outbox.claim('prueba', 10, 1_000)
+
+      await uso.execute(
+        ID,
+        { status: 'ACTIVE', reason: 'Rebalanceo completado, producto listo' },
+        { subject: 'admin-1' },
+      )
+
+      const [evento] = await outbox.claim('prueba', 10, 1_000)
+
+      expect(evento).toMatchObject({
+        aggregateId: ID,
+        aggregateType: 'CanonicalProduct',
+        eventType: 'catalog.product.reactivated',
+      })
+    })
+
+    it('la suspension NO elimina el documento: sigue siendo recuperable por su id', async () => {
+      const { uso, products } = construir()
+      await products.create(producto())
+
+      await uso.execute(ID, { status: 'SUSPENDED', reason: MOTIVO_VALIDO }, { subject: 'admin-1' })
+
+      const encontrado = await products.findById(ProductId.create(ID))
+
+      expect(encontrado).not.toBeNull()
+      expect(encontrado?.sku.value).toBe('mago-hielo')
+      expect(encontrado?.lifecycleStatus).toBe(LifecycleStatus.Suspended)
     })
 
     it('idempotencia: suspender un producto ya suspendido no genera un segundo evento', async () => {
@@ -274,6 +315,49 @@ describe('HU-35: suspension y reactivacion de producto', () => {
       await expect(
         uso.execute(AUSENTE, { status: 'SUSPENDED', reason: MOTIVO_VALIDO }, { subject: 'admin-1' }),
       ).rejects.toThrow(CanonicalProductNotFoundError)
+    })
+  })
+
+  describe('HU-35.5: bloqueo de nuevas adquisiciones tras la suspension', () => {
+    it('AcquireProductUnit (el mismo camino que usa Commerce) rechaza un producto suspendido', async () => {
+      const products = new InMemoryCanonicalProductRepository()
+      const acquisitions = new InMemoryProductAcquisitionRepository()
+      const audit = new InMemoryProductAuditRepository()
+      const outbox = new InMemoryProductOutboxRepository()
+      const clock = { now: (): Date => new Date('2026-09-05T10:00:00.000Z') }
+
+      const cambiarEstado = new UpdateProductLifecycleStatus({
+        products,
+        clock,
+        idGenerator: { generate: (): string => 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
+        audit,
+        outbox,
+      })
+      const adquirir = new AcquireProductUnit({
+        products,
+        acquisitions,
+        clock,
+        idGenerator: { generate: (): string => 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' },
+        outbox,
+      })
+
+      await products.create(producto())
+      await cambiarEstado.execute(
+        ID,
+        { status: 'SUSPENDED', reason: MOTIVO_VALIDO },
+        { subject: 'admin-1' },
+      )
+
+      await expect(
+        adquirir.execute(ID, {
+          acquisitionId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          playerId: 'jugador-1',
+        }),
+      ).rejects.toThrow(StockReservationConflictError)
+
+      const sinCambios = await products.findById(ProductId.create(ID))
+
+      expect(sinCambios?.availableUnits).toBe(producto().availableUnits)
     })
   })
 })
