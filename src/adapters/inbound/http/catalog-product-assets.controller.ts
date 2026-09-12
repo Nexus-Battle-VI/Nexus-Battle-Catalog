@@ -8,7 +8,7 @@ import {
   Res,
   ServiceUnavailableException,
 } from '@nestjs/common'
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
 import type { Response } from 'express'
 import { GET_PRODUCT_ASSET_CONTENT } from './tokens'
 import type { GetProductAssetContent } from '../../../application/use-cases/GetProductAssetContent'
@@ -16,9 +16,9 @@ import {
   ProductAssetNotFoundError,
   ProductAssetStorageUnavailableError,
 } from '../../../application/errors/ApplicationError'
+import { Public } from './auth/decorators'
 
 @ApiTags('Catalog Product Assets')
-@ApiBearerAuth('bearerAuth')
 @Controller('v1/catalog/product-assets')
 export class CatalogProductAssetsController {
   constructor(
@@ -26,6 +26,7 @@ export class CatalogProductAssetsController {
     private readonly getContentUseCase: GetProductAssetContent,
   ) {}
 
+  @Public()
   @Get(':assetId/content')
   @ApiOperation({
     operationId: 'getProductAssetContentV1',
