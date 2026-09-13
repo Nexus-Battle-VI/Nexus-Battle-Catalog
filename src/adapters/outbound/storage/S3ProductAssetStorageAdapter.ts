@@ -52,7 +52,14 @@ export class S3ProductAssetStorageAdapter implements ProductAssetStoragePort {
         ],
         Fields: {
           'Content-Type': params.contentType,
-          'x-amz-checksum-sha256': params.checksumSha256,
+          // `params.checksumSha256` lleva el prefijo "b64:" propio del
+          // dominio de Catalog (vease ImageContentValidator, que lo espera
+          // asi al finalizar). El encabezado NATIVO de S3 `x-amz-checksum-sha256`
+          // es un contrato distinto: exige el digest base64 crudo, sin
+          // prefijo. Sin este `replace`, S3 rechaza la subida entera con
+          // "InvalidRequest: Value for x-amz-checksum-sha256 header is
+          // invalid" -el prefijo no es un digest base64 valido para S3-.
+          'x-amz-checksum-sha256': params.checksumSha256.replace(/^b64:/u, ''),
         },
         Expires: params.expiresInSeconds,
       })
