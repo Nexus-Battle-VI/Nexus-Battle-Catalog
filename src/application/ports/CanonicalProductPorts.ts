@@ -87,6 +87,43 @@ export interface CanonicalProductWritePort {
     productId: ProductId,
     context?: TransactionContext,
   ): Promise<AvailabilityDecrement | null>
+
+  /**
+   * Aplica el agregado de calificaciones ya calculado (HU-40, CA-03).
+   *
+   * ES UNA ESCRITURA ABSOLUTA, no un incremento: quien llama -Community- ya
+   * calculo el promedio y el conteo finales, asi que reintentar la misma
+   * llamada dos veces dos veces produce el mismo resultado sin doble conteo.
+   * Por eso no hace falta control de concurrencia optimista aqui: dos
+   * llamadas sucesivas para el mismo producto solo dejan el ultimo valor
+   * escrito, que es exactamente lo que Community espera que pase.
+   *
+   * Devuelve `false` cuando el producto no existe -quien llama traduce eso a
+   * 404-.
+   */
+  updateRating(
+    productId: ProductId,
+    rating: { averageRating: number | null; reviewCount: number },
+    at: Date,
+    context?: TransactionContext,
+  ): Promise<boolean>
+
+  /**
+   * Registra que el producto tuvo una compra en moneda real (HU-36, CA-03).
+   *
+   * MISMO CRITERIO QUE `updateRating`: escritura ABSOLUTA -Commerce ya sabe
+   * que hubo una compra aprobada, asi que un reintento de la misma llamada no
+   * cambia nada-, sin control de concurrencia optimista, porque dos llamadas
+   * sucesivas para el mismo producto dejan el mismo resultado (`true`).
+   *
+   * Devuelve `false` cuando el producto no existe -quien llama traduce eso a
+   * 404-.
+   */
+  markRealMoneyPurchase(
+    productId: ProductId,
+    at: Date,
+    context?: TransactionContext,
+  ): Promise<boolean>
 }
 
 /** Almacén canónico completo durante la transición aditiva de ADR-013. */
@@ -169,12 +206,33 @@ export interface OutboxEntry {
   readonly lastError?: string | null
   readonly dispatchedAt?: Date | null
   readonly purgeAt?: Date | null
+  /**
+   * Trazabilidad de la solicitud original que produjo el hecho (ADR-017,
+   * AsyncAPI `catalog-events-v1`). Ningun caso de uso actual la conserva
+   * -auditado en codigo, no existe contexto de peticion capturado en
+   * Catalog- por lo que hoy llega `null`/ausente en todo evento real. El
+   * campo se declara aqui, aditivo, para que un futuro cambio que si capture
+   * esa trazabilidad no necesite otro rediseno del Outbox (HU-38, ver
+   * `ProductEventEnvelopeFactory`).
+   */
+  readonly correlationId?: string | null
 }
 
 /** Puerto para el Outbox persistente con soporte de lease y reintentos. */
 export interface ProductOutboxPort {
   record(entry: OutboxEntry, context?: TransactionContext): Promise<void>
-  claim(workerId: string, limit: number, leaseDurationMs: number): Promise<readonly OutboxEntry[]>
+  /**
+   * `allowedEventTypes`, si se informa, restringe el reclamo a esos
+   * `eventType` exactos (allowlist). Cualquier otro evento del outbox -por
+   * ejemplo uno todavia sin transporte aprobado- permanece intacto en su
+   * estado actual, sin reclamarse ni tocarse (HU-38).
+   */
+  claim(
+    workerId: string,
+    limit: number,
+    leaseDurationMs: number,
+    allowedEventTypes?: readonly string[],
+  ): Promise<readonly OutboxEntry[]>
   complete(eventId: string, context?: TransactionContext): Promise<void>
   fail(eventId: string, error: string, maxAttempts?: number): Promise<void>
 }

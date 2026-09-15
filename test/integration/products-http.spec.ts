@@ -33,7 +33,7 @@ describe('API de catalogo', () => {
   const create = (body: Record<string, unknown>) =>
     request(app.getHttpServer()).post('/api/products').send(body)
 
-  const createCanonical = () =>
+  const createCanonical = (overrides: Record<string, unknown> = {}) =>
     request(app.getHttpServer())
       .post('/api/v1/catalog/products')
       .send({
@@ -58,6 +58,7 @@ describe('API de catalogo', () => {
         printRun: -1,
         creditsPrice: 0,
         premium: false,
+        ...overrides,
       })
 
   const base = {
@@ -92,6 +93,25 @@ describe('API de catalogo', () => {
       lifecycleStatus: 'ACTIVE',
       attributes: { values: { effects: [{ stackable: false }] } },
     })
+  })
+
+  /**
+   * Regresion: `imageUrl` es el que arma `CreateProductAssetUploadIntent` a
+   * partir de `API_BASE_URL`, que en local es `http://localhost:<puerto>/...`.
+   * `@IsUrl` con la configuracion por defecto de `validator.js` rechaza
+   * cualquier host sin punto -incluido `localhost`- con "imageUrl must be a
+   * URL address", incluso siendo un producto por lo demas valido. En
+   * produccion `API_BASE_URL` siempre tiene dominio real, asi que este caso
+   * nunca se disparaba alli.
+   */
+  it('acepta un imageUrl con host localhost (API_BASE_URL en desarrollo local)', async () => {
+    const response = await createCanonical({
+      name: 'Espada canónica local con imagen local',
+      imageUrl: 'http://localhost:18080/api/v1/catalog/product-assets/asset-1/content',
+    })
+
+    expect(response.status).toBe(201)
+    expect(response.body).toMatchObject({ imageUrl: expect.stringContaining('localhost') })
   })
 
   it('POST /api/products responde 409 si la referencia ya existe', async () => {

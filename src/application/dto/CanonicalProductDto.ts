@@ -22,6 +22,11 @@ export interface CanonicalProductDto {
   readonly creditsPrice: number
   readonly premium: boolean
   readonly realMoneyPrice: { readonly amount: number; readonly currency: string } | null
+  /** Promedio de calificaciones (HU-40). `null` sin calificaciones todavia. */
+  readonly averageRating: number | null
+  readonly reviewCount: number
+  /** Cierto si el producto tuvo al menos una compra en moneda real (HU-36, CA-03). */
+  readonly hasRealMoneyPurchase: boolean
   readonly createdAt: string
   readonly updatedAt: string
   readonly version: number
@@ -42,6 +47,9 @@ export const toCanonicalProductDto = (snapshot: CanonicalProductSnapshot): Canon
   creditsPrice: snapshot.creditsPrice,
   premium: snapshot.premium,
   realMoneyPrice: snapshot.realMoneyPrice,
+  averageRating: snapshot.averageRating,
+  reviewCount: snapshot.reviewCount,
+  hasRealMoneyPurchase: snapshot.hasRealMoneyPurchase,
   createdAt: snapshot.createdAt,
   updatedAt: snapshot.updatedAt,
   version: snapshot.version,

@@ -4,28 +4,47 @@ import {
   ConflictException,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Inject,
   NotFoundException,
   Param,
   Patch,
+  Res,
   UnprocessableEntityException,
 } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger'
+import type { Response } from 'express'
 
 import { DomainError } from '../../../domain/errors/DomainError'
 import {
   CanonicalProductConcurrencyConflictError,
   CanonicalProductNotFoundError,
+  ProductPremiumPurchaseConflictError,
 } from '../../../application/errors/ApplicationError'
 import type { CanonicalProductDto } from '../../../application/dto/CanonicalProductDto'
 import type { AdjustProductInventory } from '../../../application/use-cases/AdjustProductInventory'
+import type { ConfigureProductPremium } from '../../../application/use-cases/ConfigureProductPremium'
 import type { GetCanonicalProduct } from '../../../application/use-cases/GetCanonicalProduct'
+import type { UpdateProductLifecycleStatus } from '../../../application/use-cases/UpdateProductLifecycleStatus'
 import { Role, type VerifiedIdentity } from '../../../application/ports/TokenVerifierPort'
-import { ADJUST_PRODUCT_INVENTORY, GET_CANONICAL_PRODUCT } from './tokens'
+import type { AuditActor } from '../../../application/ports/CanonicalProductPorts'
+import type { RequestTraceContext } from '../../../application/ports/RequestTraceContext'
+import { resolveCorrelationId } from './correlation-id'
+import {
+  ADJUST_PRODUCT_INVENTORY,
+  CONFIGURE_PRODUCT_PREMIUM,
+  GET_CANONICAL_PRODUCT,
+  UPDATE_PRODUCT_LIFECYCLE_STATUS,
+} from './tokens'
 import { CurrentIdentity, RequiresMfaEvidence, Roles } from './auth/decorators'
-import { AdjustInventoryRequest, CanonicalProductResponse } from './admin-products.dto'
+import {
+  AdjustInventoryRequest,
+  CanonicalProductResponse,
+  ConfigurePremiumRequest,
+  UpdateProductStatusRequest,
+} from './admin-products.dto'
 
 /**
  * Ajuste administrativo del tiraje (HU-34, CA-02).
@@ -41,8 +60,12 @@ export class AdminProductsController {
   constructor(
     @Inject(ADJUST_PRODUCT_INVENTORY)
     private readonly adjustProductInventory: AdjustProductInventory,
+    @Inject(CONFIGURE_PRODUCT_PREMIUM)
+    private readonly configureProductPremium: ConfigureProductPremium,
     @Inject(GET_CANONICAL_PRODUCT)
     private readonly getCanonicalProduct: GetCanonicalProduct,
+    @Inject(UPDATE_PRODUCT_LIFECYCLE_STATUS)
+    private readonly updateProductLifecycleStatus: UpdateProductLifecycleStatus,
   ) {}
 
   @Get(':id')
@@ -89,25 +112,129 @@ export class AdminProductsController {
     @Param('id') id: string,
     @Body() body: AdjustInventoryRequest,
     @CurrentIdentity() identity: VerifiedIdentity,
+    @Headers('x-correlation-id') rawCorrelationId: string | string[] | undefined,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<CanonicalProductDto> {
+    const trace: RequestTraceContext = { correlationId: resolveCorrelationId(rawCorrelationId) }
+    response.setHeader('x-correlation-id', trace.correlationId)
+
     try {
-      const actor = {
-        subject: identity.subject,
-        // Se OMITEN las claves ausentes en lugar de escribirlas como
-        // `undefined`: el controlador de MongoDB serializa `undefined` como
-        // null y el validador de `audit_log` exige texto. Un testimonio de
-        // acceso de Cognito no lleva `email`.
-        ...(identity.email === null ? {} : { email: identity.email }),
-        ...(() => {
-          const rol = [...identity.roles][0]
-
-          return rol === undefined ? {} : { role: rol }
-        })(),
-      }
-
-      return await this.adjustProductInventory.execute(id, body, actor)
+      return await this.adjustProductInventory.execute(
+        id,
+        body,
+        AdminProductsController.buildActor(identity),
+        trace,
+      )
     } catch (error: unknown) {
       throw AdminProductsController.translate(error)
+    }
+  }
+
+  @Patch(':id/premium')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.Administrator)
+  @RequiresMfaEvidence()
+  @ApiOperation({
+    operationId: 'configureCatalogProductPremiumV1',
+    summary: 'Activa o actualiza la condicion premium y el precio en moneda real de un producto',
+  })
+  @ApiParam({ name: 'id', description: 'Identificador del producto canonico' })
+  @ApiResponse({ status: 200, description: 'Premium configurado', type: CanonicalProductResponse })
+  @ApiResponse({ status: 400, description: 'Cuerpo o campos no declarados invalidos' })
+  @ApiResponse({ status: 401, description: 'Testimonio ausente, invalido o vencido' })
+  @ApiResponse({ status: 403, description: 'Rol no autorizado o segundo factor ausente' })
+  @ApiResponse({ status: 404, description: 'El producto no existe' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'Otro ajuste modifico el producto entre medias, o se intento retirar premium de un producto con compras en moneda real ya registradas',
+  })
+  @ApiResponse({
+    status: 422,
+    description: 'Precio en moneda real invalido para la condicion premium solicitada',
+  })
+  @ApiResponse({ status: 503, description: 'No se pudo comprobar el segundo factor' })
+  async configurePremium(
+    @Param('id') id: string,
+    @Body() body: ConfigurePremiumRequest,
+    @CurrentIdentity() identity: VerifiedIdentity,
+    @Headers('x-correlation-id') rawCorrelationId: string | string[] | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<CanonicalProductDto> {
+    const trace: RequestTraceContext = { correlationId: resolveCorrelationId(rawCorrelationId) }
+    response.setHeader('x-correlation-id', trace.correlationId)
+
+    try {
+      return await this.configureProductPremium.execute(
+        id,
+        body,
+        AdminProductsController.buildActor(identity),
+        trace,
+      )
+    } catch (error: unknown) {
+      throw AdminProductsController.translate(error)
+    }
+  }
+
+  @Patch(':id/status')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.Administrator)
+  @RequiresMfaEvidence()
+  @ApiOperation({
+    operationId: 'updateCatalogProductStatusV1',
+    summary: 'Suspende (borrado logico) o reactiva un producto',
+  })
+  @ApiParam({ name: 'id', description: 'Identificador del producto canonico' })
+  @ApiResponse({
+    status: 200,
+    description: 'Estado actualizado (o ya se encontraba en el estado solicitado)',
+    type: CanonicalProductResponse,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Cuerpo o campos no declarados invalidos, o motivo ausente/menor a 10 caracteres',
+  })
+  @ApiResponse({ status: 401, description: 'Testimonio ausente, invalido o vencido' })
+  @ApiResponse({ status: 403, description: 'Rol no autorizado o segundo factor ausente' })
+  @ApiResponse({ status: 404, description: 'El producto no existe' })
+  @ApiResponse({ status: 503, description: 'No se pudo comprobar el segundo factor' })
+  async updateStatus(
+    @Param('id') id: string,
+    @Body() body: UpdateProductStatusRequest,
+    @CurrentIdentity() identity: VerifiedIdentity,
+    @Headers('x-correlation-id') rawCorrelationId: string | string[] | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<CanonicalProductDto> {
+    const trace: RequestTraceContext = { correlationId: resolveCorrelationId(rawCorrelationId) }
+    response.setHeader('x-correlation-id', trace.correlationId)
+
+    try {
+      return await this.updateProductLifecycleStatus.execute(
+        id,
+        body,
+        AdminProductsController.buildActor(identity),
+        trace,
+      )
+    } catch (error: unknown) {
+      throw AdminProductsController.translate(error)
+    }
+  }
+
+  /**
+   * Se OMITEN las claves ausentes en lugar de escribirlas como `undefined`: el
+   * controlador de MongoDB serializa `undefined` como null y el validador de
+   * `audit_log` exige texto. Un testimonio de acceso de Cognito no lleva
+   * `email`.
+   */
+  private static buildActor(identity: VerifiedIdentity): AuditActor {
+    return {
+      subject: identity.subject,
+      ...(identity.email === null ? {} : { email: identity.email }),
+      ...(() => {
+        const rol = [...identity.roles][0]
+
+        return rol === undefined ? {} : { role: rol }
+      })(),
     }
   }
 
@@ -116,7 +243,10 @@ export class AdminProductsController {
       return new NotFoundException(error.message)
     }
 
-    if (error instanceof CanonicalProductConcurrencyConflictError) {
+    if (
+      error instanceof CanonicalProductConcurrencyConflictError ||
+      error instanceof ProductPremiumPurchaseConflictError
+    ) {
       return new ConflictException(error.message)
     }
 
@@ -133,7 +263,11 @@ export class AdminProductsController {
   }
 
   private static isRequestShapeError(error: DomainError): boolean {
-    return /no es una propiedad admitida|es obligatorio\.|debe ser (un objeto|texto|un entero|booleano|una lista)\./u.test(
+    // "Debe tener al menos N caracteres" entra aqui a proposito: CA-02 de
+    // HU-35 exige 400 tanto para el motivo ausente como para uno demasiado
+    // corto, tratando ambos como el mismo tipo de defecto (forma de la
+    // solicitud), no como una regla de negocio sobre el producto.
+    return /no es una propiedad admitida|es obligatorio\.|debe ser (un objeto|texto|un entero|booleano|una lista)\.|debe tener al menos \d+ caracteres\.|debe ser uno de: /u.test(
       error.message,
     )
   }

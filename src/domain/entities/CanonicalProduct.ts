@@ -14,6 +14,36 @@ import type { Money, ProductName, Sku } from '../value-objects/catalog-values'
 import { DomainError } from '../errors/DomainError'
 
 /**
+ * Comprueba que el promedio y el numero de calificaciones digan lo mismo
+ * (HU-40, CA-03): sin calificaciones el promedio es `null`, y con al menos una
+ * es un numero entre 1 y 5. Community es quien calcula ambos valores; esta
+ * comprobacion es la misma defensa en profundidad que `assertAvailability`
+ * aplica a la disponibilidad -la invariante se verifica aqui ADEMAS de en el
+ * validador de MongoDB-.
+ */
+export const assertRatingAggregate = (averageRating: number | null, reviewCount: number): void => {
+  if (!Number.isInteger(reviewCount) || reviewCount < 0) {
+    throw new DomainError(
+      `El numero de calificaciones debe ser un entero no negativo. Se recibio ${String(reviewCount)}.`,
+    )
+  }
+
+  if (reviewCount === 0) {
+    if (averageRating !== null) {
+      throw new DomainError('Un producto sin calificaciones no lleva promedio.')
+    }
+
+    return
+  }
+
+  if (averageRating === null || averageRating < 1 || averageRating > 5) {
+    throw new DomainError(
+      `Un producto con calificaciones necesita un promedio entre 1 y 5. Se recibio ${String(averageRating)}.`,
+    )
+  }
+}
+
+/**
  * Comprueba que la disponibilidad y el tiraje digan lo mismo.
  *
  * Tiraje infinito exige `null`; cualquier otro modo exige un entero entre 0 y
@@ -69,6 +99,19 @@ export interface CanonicalProductSnapshot {
   readonly creditsPrice: number
   readonly premium: boolean
   readonly realMoneyPrice: { readonly amount: number; readonly currency: string } | null
+  /**
+   * Promedio de calificaciones (HU-40, CA-03). `null` sin calificaciones
+   * todavia. Lo calcula y lo empuja Community; Catalog solo lo conserva.
+   */
+  readonly averageRating: number | null
+  readonly reviewCount: number
+  /**
+   * Cierto si el producto tuvo al menos una compra en moneda real (HU-36,
+   * CA-03). Lo empuja Commerce -dueño de las transacciones- via el contrato
+   * interno de HU-36.6; Catalog no calcula esto, solo lo conserva para poder
+   * bloquear el retiro de la condicion premium.
+   */
+  readonly hasRealMoneyPurchase: boolean
   readonly createdAt: string
   readonly updatedAt: string
   readonly version: number
@@ -90,6 +133,9 @@ export class CanonicalProduct {
   readonly creditsPrice: CreditsPrice
   readonly premium: boolean
   readonly realMoneyPrice: Money | null
+  readonly averageRating: number | null
+  readonly reviewCount: number
+  readonly hasRealMoneyPurchase: boolean
   readonly createdAt: Date
   readonly updatedAt: Date
   readonly version: number
@@ -108,6 +154,9 @@ export class CanonicalProduct {
     createdAt: Date
     lifecycleStatus: LifecycleStatus
     updatedAt: Date
+    averageRating: number | null
+    reviewCount: number
+    hasRealMoneyPurchase: boolean
     version?: number
   }) {
     this.productId = params.productId
@@ -130,6 +179,10 @@ export class CanonicalProduct {
     this.premium = params.pricing.premium
     this.realMoneyPrice = params.pricing.realMoneyPrice
     this.lifecycleStatus = params.lifecycleStatus
+    assertRatingAggregate(params.averageRating, params.reviewCount)
+    this.averageRating = params.averageRating
+    this.reviewCount = params.reviewCount
+    this.hasRealMoneyPurchase = params.hasRealMoneyPurchase
     this.createdAt = new Date(params.createdAt)
     this.updatedAt = new Date(params.updatedAt)
     this.version = params.version ?? 0
@@ -154,6 +207,12 @@ export class CanonicalProduct {
       availableUnits: params.printRun.isInfinite ? null : params.printRun.value,
       lifecycleStatus: LifecycleStatus.Active,
       updatedAt: params.createdAt,
+      // Un producto nace sin calificaciones (HU-40): las empuja Community
+      // cuando exista la primera.
+      averageRating: null,
+      reviewCount: 0,
+      // Un producto nace sin compras: nadie pudo haberlo comprado todavia.
+      hasRealMoneyPurchase: false,
       version: 0,
     })
   }
@@ -172,6 +231,9 @@ export class CanonicalProduct {
     lifecycleStatus: LifecycleStatus
     createdAt: Date
     updatedAt: Date
+    averageRating: number | null
+    reviewCount: number
+    hasRealMoneyPurchase: boolean
     version?: number
   }): CanonicalProduct {
     return new CanonicalProduct(params)
@@ -231,7 +293,69 @@ export class CanonicalProduct {
     return this.copyWith(printRun, printRun.value - entregadas, at)
   }
 
-  private copyWith(printRun: PrintRun, availableUnits: number | null, at: Date): CanonicalProduct {
+  /**
+   * Activa o actualiza la condicion premium y su precio en moneda real (HU-36).
+   *
+   * `pricing` ya trae la invariante de `ProductPricing` resuelta (premium
+   * exige precio real positivo; no premium no admite precio real). El
+   * creditsPrice de `pricing` se ignora a proposito: esta operacion es sobre
+   * la condicion premium, no sobre el precio en creditos.
+   *
+   * RETIRAR premium (pasar de `true` a `false`) solo se rechaza cuando
+   * `hasRealMoneyPurchase` es cierto (HU-36, CA-03): ese dato lo empuja
+   * Commerce via el contrato interno de HU-36.6, asi que ya vive en este
+   * agregado y la invariante se puede sostener aqui. ESTA COMPROBACION SE
+   * REPITE en `ConfigureProductPremium` -donde el error se traduce a 409 en
+   * vez de al generico 422 que produce este `DomainError`-, siguiendo el mismo
+   * criterio de defensa en profundidad que `assertAvailability` documenta:
+   * el dominio protege su propia invariante incluso si alguien lo invoca sin
+   * pasar por el caso de uso.
+   */
+  configurePremium(pricing: ProductPricing, at: Date): CanonicalProduct {
+    if (this.premium && !pricing.premium && this.hasRealMoneyPurchase) {
+      throw new DomainError(
+        'No es posible retirar la condicion premium de un producto con compras en moneda real ya registradas.',
+      )
+    }
+
+    return new CanonicalProduct({
+      productId: this.productId,
+      sku: this.sku,
+      name: this.name,
+      imageUrl: this.imageUrl,
+      description: this.description,
+      type: this.type,
+      attributes: this.attributes,
+      printRun: this.printRun,
+      availableUnits: this.availableUnits,
+      pricing: {
+        creditsPrice: this.creditsPrice,
+        premium: pricing.premium,
+        realMoneyPrice: pricing.realMoneyPrice,
+      },
+      lifecycleStatus: this.lifecycleStatus,
+      createdAt: this.createdAt,
+      updatedAt: at,
+      // Esta operacion es sobre premium, no sobre calificaciones ni compras:
+      // se conservan intactas, igual que `copyWith` cuando no recibe `rating`.
+      averageRating: this.averageRating,
+      reviewCount: this.reviewCount,
+      hasRealMoneyPurchase: this.hasRealMoneyPurchase,
+      // La version AVANZA, por la misma razon que en `adjustPrintRun`: sin
+      // avanzar, dos configuraciones simultaneas leerian la misma version y la
+      // segunda pisaria a la primera sin que nada lo notara.
+      version: this.version + 1,
+    })
+  }
+
+  private copyWith(
+    printRun: PrintRun,
+    availableUnits: number | null,
+    at: Date,
+    rating?: { averageRating: number | null; reviewCount: number },
+    lifecycleStatus?: LifecycleStatus,
+    hasRealMoneyPurchase?: boolean,
+  ): CanonicalProduct {
     return new CanonicalProduct({
       productId: this.productId,
       sku: this.sku,
@@ -247,14 +371,90 @@ export class CanonicalProduct {
         premium: this.premium,
         realMoneyPrice: this.realMoneyPrice,
       },
-      lifecycleStatus: this.lifecycleStatus,
+      lifecycleStatus: lifecycleStatus ?? this.lifecycleStatus,
       createdAt: this.createdAt,
       updatedAt: at,
+      averageRating: rating?.averageRating ?? this.averageRating,
+      reviewCount: rating?.reviewCount ?? this.reviewCount,
+      hasRealMoneyPurchase: hasRealMoneyPurchase ?? this.hasRealMoneyPurchase,
       // La version AVANZA. Escribir un cambio conservandola dejaria la
       // concurrencia optimista sin efecto: dos ajustes simultaneos leerian la
       // misma version, y el segundo pisaria al primero sin que nada lo notara.
       version: this.version + 1,
     })
+  }
+
+  /**
+   * Suspende el producto: borrado logico (HU-35, CA-01). Nunca se elimina el
+   * documento ni sus referencias; solo cambia `lifecycleStatus`.
+   *
+   * Reutiliza guardas que YA EXISTEN en el resto del agregado: `reserveUnits`
+   * ya rechaza operar sobre un producto suspendido, y la proyeccion de
+   * vitrina publica ya filtra por `lifecycleStatus: ACTIVE`. Esta operacion
+   * no necesita tocar ninguna de las dos.
+   *
+   * IDEMPOTENTE: si ya esta suspendido, devuelve el MISMO agregado (misma
+   * referencia, `version` sin avanzar). El caso de uso usa esa igualdad de
+   * referencia para no escribir un segundo evento de auditoria ni de outbox.
+   */
+  suspend(at: Date): CanonicalProduct {
+    if (this.lifecycleStatus === LifecycleStatus.Suspended) {
+      return this
+    }
+
+    return this.copyWith(
+      this.printRun,
+      this.availableUnits,
+      at,
+      undefined,
+      LifecycleStatus.Suspended,
+    )
+  }
+
+  /**
+   * Reactiva el producto (HU-35, CA-03).
+   *
+   * NO restituye unidades: `availableUnits` es independiente de
+   * `lifecycleStatus`, asi que un producto agotado antes de suspenderse sigue
+   * agotado despues de reactivarse, sin logica adicional. Ampliar el tiraje
+   * para volver a habilitar adquisiciones es HU-034, no esta operacion.
+   *
+   * Idempotente igual que `suspend`.
+   */
+  reactivate(at: Date): CanonicalProduct {
+    if (this.lifecycleStatus === LifecycleStatus.Active) {
+      return this
+    }
+
+    return this.copyWith(this.printRun, this.availableUnits, at, undefined, LifecycleStatus.Active)
+  }
+
+  /**
+   * Actualiza el agregado de calificaciones (HU-40, CA-03).
+   *
+   * DEVUELVE UN AGREGADO NUEVO, igual que `adjustPrintRun`. Quien calcula el
+   * promedio y el conteo es Community, dueña de las calificaciones; este
+   * metodo solo aplica el valor ya calculado y conserva la invariante -sin
+   * calificaciones, sin promedio- en el lado de Catalog.
+   */
+  withRating(
+    rating: { averageRating: number | null; reviewCount: number },
+    at: Date,
+  ): CanonicalProduct {
+    return this.copyWith(this.printRun, this.availableUnits, at, rating)
+  }
+
+  /**
+   * Registra que el producto tuvo una compra en moneda real (HU-36, CA-03).
+   *
+   * MISMO CRITERIO QUE `withRating`: es una escritura ABSOLUTA que empuja
+   * Commerce, no un calculo de este agregado. No se comprueba si ya estaba en
+   * `true` porque no hace falta -escribir `true` sobre `true` es exactamente
+   * el mismo resultado, sin efecto observable distinto salvo el avance de
+   * `version`, igual que un reintento de `updateRating` con el mismo valor.
+   */
+  withRealMoneyPurchase(at: Date): CanonicalProduct {
+    return this.copyWith(this.printRun, this.availableUnits, at, undefined, undefined, true)
   }
 
   /**
@@ -317,6 +517,9 @@ export class CanonicalProduct {
         this.realMoneyPrice === null
           ? null
           : { amount: this.realMoneyPrice.amount, currency: this.realMoneyPrice.currency },
+      averageRating: this.averageRating,
+      reviewCount: this.reviewCount,
+      hasRealMoneyPurchase: this.hasRealMoneyPurchase,
       createdAt: this.createdAt.toISOString(),
       updatedAt: this.updatedAt.toISOString(),
       version: this.version,

@@ -13,10 +13,17 @@ import {
 import { CanonicalProductsController } from '../../adapters/inbound/http/canonical-products.controller'
 import { AdminProductsController } from '../../adapters/inbound/http/admin-products.controller'
 import { InternalProductAcquisitionsController } from '../../adapters/inbound/http/internal-product-acquisitions.controller'
+import { InternalProductPremiumStatusController } from '../../adapters/inbound/http/internal-product-premium-status.controller'
+import { InternalProductPremiumPurchaseController } from '../../adapters/inbound/http/internal-product-premium-purchase.controller'
+import { InternalProductRatingController } from '../../adapters/inbound/http/internal-product-rating.controller'
 import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
 import { AdjustProductInventory } from '../../application/use-cases/AdjustProductInventory'
+import { ConfigureProductPremium } from '../../application/use-cases/ConfigureProductPremium'
+import { UpdateProductLifecycleStatus } from '../../application/use-cases/UpdateProductLifecycleStatus'
 import { GetCanonicalProduct } from '../../application/use-cases/GetCanonicalProduct'
 import { AcquireProductUnit } from '../../application/use-cases/AcquireProductUnit'
+import { UpdateProductRating } from '../../application/use-cases/UpdateProductRating'
+import { RegisterProductRealMoneyPurchase } from '../../application/use-cases/RegisterProductRealMoneyPurchase'
 import { ListCatalogStorefront } from '../../application/use-cases/ListCatalogStorefront'
 import type { CatalogStorefrontPort } from '../../application/ports/CatalogStorefrontPort'
 import { StockReservations } from '../../application/use-cases/StockReservations'
@@ -32,6 +39,14 @@ import { InMemoryProductAcquisitionRepository } from '../../adapters/outbound/pe
 import { AdminProductAssetsController } from '../../adapters/inbound/http/admin-product-assets.controller'
 import { CatalogProductAssetsController } from '../../adapters/inbound/http/catalog-product-assets.controller'
 import { HealthController } from '../../adapters/inbound/http/health.controller'
+import { DispatchProductOutbox } from '../../application/use-cases/DispatchProductOutbox'
+import {
+  PRODUCT_EVENT_PUBLISHER_PORT,
+  type ProductEventPublisherPort,
+} from '../../application/ports/ProductEventPublisherPort'
+import { InMemoryProductEventPublisher } from '../../adapters/outbound/messaging/InMemoryProductEventPublisher'
+import { SqsProductEventPublisher } from '../../adapters/outbound/messaging/SqsProductEventPublisher'
+import { OutboxDispatcherWorker } from '../messaging/OutboxDispatcherWorker'
 import {
   ARCHIVE_PRODUCT,
   CHANGE_PRICE,
@@ -43,8 +58,12 @@ import {
   GET_CANONICAL_PRODUCT_BY_REFERENCE,
   LOOKUP_CANONICAL_PRODUCTS,
   ADJUST_PRODUCT_INVENTORY,
+  CONFIGURE_PRODUCT_PREMIUM,
   GET_CANONICAL_PRODUCT,
   ACQUIRE_PRODUCT_UNIT,
+  UPDATE_PRODUCT_RATING,
+  UPDATE_PRODUCT_LIFECYCLE_STATUS,
+  REGISTER_PRODUCT_REAL_MONEY_PURCHASE,
   CREATE_PRODUCT_ASSET_UPLOAD_INTENT,
   FINALIZE_PRODUCT_ASSET,
   GET_PRODUCT_ASSET_CONTENT,
@@ -137,6 +156,8 @@ export const APP_CONFIG = Symbol('AppConfig')
 export const LOGGER = Symbol('Logger')
 export const CATALOG_MONGO_CLIENT = Symbol('CatalogMongoClient')
 const CATALOG_DATABASE = Symbol('CatalogDatabase')
+const DISPATCH_PRODUCT_OUTBOX = Symbol('DispatchProductOutbox')
+const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
 
 /**
  * Raiz de composicion.
@@ -152,6 +173,9 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
     CanonicalProductsController,
     AdminProductsController,
     InternalProductAcquisitionsController,
+    InternalProductPremiumStatusController,
+    InternalProductPremiumPurchaseController,
+    InternalProductRatingController,
     InternalStockReservationsController,
     AdminProductAssetsController,
     CatalogProductAssetsController,
@@ -340,9 +364,10 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         new InternalServiceGuard({
           reflector,
           secret: config.internalServiceAuthSecret,
-          // Lista explicita: hoy solo Commerce adquiere unidades. Subasta se
-          // anade cuando exista, y anadirla obliga a decidirlo aqui.
-          allowedServices: ['commerce'],
+          // Lista explicita: Commerce adquiere unidades y Community empuja el
+          // agregado de calificaciones (HU-40). Subasta se anade cuando
+          // exista, y anadirla obliga a decidirlo aqui.
+          allowedServices: ['commerce', 'community'],
           clock: new SystemClock(),
           logger,
         }),
@@ -464,6 +489,53 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
       ],
     },
     {
+      provide: CONFIGURE_PRODUCT_PREMIUM,
+      useFactory: (
+        products: CanonicalProductRepositoryPort,
+        clock: ClockPort,
+        idGenerator: IdGeneratorPort,
+        unitOfWork: CanonicalProductUnitOfWorkPort,
+        audit: ProductAuditPort,
+        outbox: ProductOutboxPort,
+      ): ConfigureProductPremium =>
+        new ConfigureProductPremium({ products, clock, idGenerator, unitOfWork, audit, outbox }),
+      inject: [
+        CANONICAL_PRODUCT_WRITE,
+        CLOCK,
+        ID_GENERATOR,
+        CANONICAL_PRODUCT_UNIT_OF_WORK,
+        PRODUCT_AUDIT_PORT,
+        PRODUCT_OUTBOX_PORT,
+      ],
+    },
+    {
+      provide: UPDATE_PRODUCT_LIFECYCLE_STATUS,
+      useFactory: (
+        products: CanonicalProductRepositoryPort,
+        clock: ClockPort,
+        idGenerator: IdGeneratorPort,
+        unitOfWork: CanonicalProductUnitOfWorkPort,
+        audit: ProductAuditPort,
+        outbox: ProductOutboxPort,
+      ): UpdateProductLifecycleStatus =>
+        new UpdateProductLifecycleStatus({
+          products,
+          clock,
+          idGenerator,
+          unitOfWork,
+          audit,
+          outbox,
+        }),
+      inject: [
+        CANONICAL_PRODUCT_WRITE,
+        CLOCK,
+        ID_GENERATOR,
+        CANONICAL_PRODUCT_UNIT_OF_WORK,
+        PRODUCT_AUDIT_PORT,
+        PRODUCT_OUTBOX_PORT,
+      ],
+    },
+    {
       provide: GET_CANONICAL_PRODUCT,
       useFactory: (products: CanonicalProductRepositoryPort): GetCanonicalProduct =>
         new GetCanonicalProduct({ products }),
@@ -488,6 +560,23 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         CANONICAL_PRODUCT_UNIT_OF_WORK,
         PRODUCT_OUTBOX_PORT,
       ],
+    },
+    {
+      provide: UPDATE_PRODUCT_RATING,
+      useFactory: (
+        products: CanonicalProductRepositoryPort,
+        clock: ClockPort,
+      ): UpdateProductRating => new UpdateProductRating({ products, clock }),
+      inject: [CANONICAL_PRODUCT_WRITE, CLOCK],
+    },
+    {
+      provide: REGISTER_PRODUCT_REAL_MONEY_PURCHASE,
+      useFactory: (
+        products: CanonicalProductRepositoryPort,
+        clock: ClockPort,
+      ): RegisterProductRealMoneyPurchase =>
+        new RegisterProductRealMoneyPurchase({ products, clock }),
+      inject: [CANONICAL_PRODUCT_WRITE, CLOCK],
     },
     {
       provide: CREATE_CANONICAL_PRODUCT,
@@ -675,6 +764,70 @@ const CATALOG_DATABASE = Symbol('CatalogDatabase')
         nodeEnv: config.nodeEnv,
       }),
       inject: [APP_CONFIG],
+    },
+    {
+      // HU-38: fuera del despacho activo no hace falta un SQSClient real -el
+      // worker deshabilitado nunca llama a publish()-, asi que el default
+      // seguro es el doble en memoria, igual que el resto de adaptadores
+      // "memory" de este modulo.
+      provide: PRODUCT_EVENT_PUBLISHER_PORT,
+      useFactory: (config: AppConfig): ProductEventPublisherPort => {
+        const { eventDispatch } = config
+
+        if (!eventDispatch.enabled) {
+          return new InMemoryProductEventPublisher()
+        }
+
+        const { awsRegion, eventsQueueUrl, lifecycleQueueUrl } = eventDispatch
+
+        // `loadConfig` ya garantiza estos tres campos no nulos cuando
+        // `enabled` es true (fail closed); la comprobacion es solo para que
+        // el compilador estreche el tipo sin recurrir a una aserción.
+        if (awsRegion === null || eventsQueueUrl === null || lifecycleQueueUrl === null) {
+          throw new Error(
+            'CATALOG_EVENT_DISPATCH_ENABLED=true sin AWS_REGION/CATALOG_EVENTS_QUEUE_URL/' +
+              'CATALOG_LIFECYCLE_QUEUE_URL: loadConfig deberia haberlo rechazado antes.',
+          )
+        }
+
+        return new SqsProductEventPublisher({
+          region: awsRegion,
+          eventsQueueUrl,
+          lifecycleQueueUrl,
+        })
+      },
+      inject: [APP_CONFIG],
+    },
+    {
+      provide: DISPATCH_PRODUCT_OUTBOX,
+      useFactory: (
+        outbox: ProductOutboxPort,
+        publisher: ProductEventPublisherPort,
+        logger: Logger,
+        idGenerator: IdGeneratorPort,
+        config: AppConfig,
+      ): DispatchProductOutbox =>
+        new DispatchProductOutbox({
+          outbox,
+          publisher,
+          logger,
+          workerId: `catalog-dispatcher-${idGenerator.generate()}`,
+          batchSize: config.eventDispatch.batchSize,
+        }),
+      inject: [PRODUCT_OUTBOX_PORT, PRODUCT_EVENT_PUBLISHER_PORT, LOGGER, ID_GENERATOR, APP_CONFIG],
+    },
+    {
+      // Registrado como provider para que Nest invoque sus hooks de ciclo de
+      // vida (`OnApplicationBootstrap`/`OnApplicationShutdown`) aunque ningun
+      // otro provider lo inyecte.
+      provide: OUTBOX_DISPATCHER_WORKER,
+      useFactory: (
+        dispatcher: DispatchProductOutbox,
+        config: AppConfig,
+        logger: Logger,
+      ): OutboxDispatcherWorker =>
+        new OutboxDispatcherWorker({ enabled: config.eventDispatch.enabled, dispatcher, logger }),
+      inject: [DISPATCH_PRODUCT_OUTBOX, APP_CONFIG, LOGGER],
     },
   ],
 })

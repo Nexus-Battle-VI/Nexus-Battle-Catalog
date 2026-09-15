@@ -77,6 +77,9 @@ const buildProduct = (params: {
       lifecycleStatus: LifecycleStatus.Suspended,
       availableUnits: null,
       updatedAt: base.createdAt,
+      averageRating: null,
+      reviewCount: 0,
+      hasRealMoneyPurchase: false,
       version: 0,
     })
   }

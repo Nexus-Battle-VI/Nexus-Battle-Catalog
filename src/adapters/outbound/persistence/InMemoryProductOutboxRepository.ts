@@ -24,12 +24,15 @@ export class InMemoryProductOutboxRepository implements ProductOutboxPort {
     _workerId: string,
     limit: number,
     leaseDurationMs: number,
+    allowedEventTypes?: readonly string[],
   ): Promise<readonly OutboxEntry[]> {
     const now = new Date()
     const claimed: OutboxEntry[] = []
+    const allowed = allowedEventTypes ? new Set(allowedEventTypes) : null
 
     for (const entry of this.entries) {
       if (claimed.length >= limit) break
+      if (allowed !== null && !allowed.has(entry.eventType)) continue
       const canClaim =
         entry.status === OutboxStatus.Pending ||
         (entry.status === OutboxStatus.InFlight &&
