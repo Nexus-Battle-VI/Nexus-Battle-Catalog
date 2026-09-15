@@ -57,7 +57,14 @@ export class CreateCanonicalProductRequest {
 
   @ApiProperty({ format: 'uri', example: 'https://assets.example.test/catalog/espada.webp' })
   @IsString()
-  @IsUrl({ require_protocol: true })
+  // `require_tld: false`: sin esto, `validator.js` rechaza cualquier host sin
+  // punto -incluido `localhost`-, que es exactamente lo que Catalog arma en
+  // `imageUrl` cuando API_BASE_URL apunta a un entorno local
+  // (CreateProductAssetUploadIntent). En produccion API_BASE_URL siempre
+  // tiene dominio real, asi que esto no relaja nada alli: solo deja de
+  // rechazar un host que ya es valido segun RFC 3986, no lo era solo por una
+  // opcion por defecto de la libreria.
+  @IsUrl({ require_protocol: true, require_tld: false })
   imageUrl!: string
 
   @ApiProperty({ minLength: 1, example: 'Espada de dos manos con daño de fuego.' })
