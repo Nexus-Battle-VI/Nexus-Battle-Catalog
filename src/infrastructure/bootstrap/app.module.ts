@@ -14,6 +14,7 @@ import { CanonicalProductsController } from '../../adapters/inbound/http/canonic
 import { AdminProductsController } from '../../adapters/inbound/http/admin-products.controller'
 import { InternalProductAcquisitionsController } from '../../adapters/inbound/http/internal-product-acquisitions.controller'
 import { InternalProductPremiumStatusController } from '../../adapters/inbound/http/internal-product-premium-status.controller'
+import { InternalOfficialAuctionEligibilityController } from '../../adapters/inbound/http/internal-official-auction-eligibility.controller'
 import { InternalProductPremiumPurchaseController } from '../../adapters/inbound/http/internal-product-premium-purchase.controller'
 import { InternalProductRatingController } from '../../adapters/inbound/http/internal-product-rating.controller'
 import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
@@ -21,6 +22,7 @@ import { AdjustProductInventory } from '../../application/use-cases/AdjustProduc
 import { ConfigureProductPremium } from '../../application/use-cases/ConfigureProductPremium'
 import { UpdateProductLifecycleStatus } from '../../application/use-cases/UpdateProductLifecycleStatus'
 import { GetCanonicalProduct } from '../../application/use-cases/GetCanonicalProduct'
+import { GetOfficialAuctionEligibility } from '../../application/use-cases/GetOfficialAuctionEligibility'
 import { AcquireProductUnit } from '../../application/use-cases/AcquireProductUnit'
 import { UpdateProductRating } from '../../application/use-cases/UpdateProductRating'
 import { RegisterProductRealMoneyPurchase } from '../../application/use-cases/RegisterProductRealMoneyPurchase'
@@ -60,6 +62,7 @@ import {
   ADJUST_PRODUCT_INVENTORY,
   CONFIGURE_PRODUCT_PREMIUM,
   GET_CANONICAL_PRODUCT,
+  GET_OFFICIAL_AUCTION_ELIGIBILITY,
   ACQUIRE_PRODUCT_UNIT,
   UPDATE_PRODUCT_RATING,
   UPDATE_PRODUCT_LIFECYCLE_STATUS,
@@ -174,6 +177,7 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
     AdminProductsController,
     InternalProductAcquisitionsController,
     InternalProductPremiumStatusController,
+    InternalOfficialAuctionEligibilityController,
     InternalProductPremiumPurchaseController,
     InternalProductRatingController,
     InternalStockReservationsController,
@@ -540,6 +544,12 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
       useFactory: (products: CanonicalProductRepositoryPort): GetCanonicalProduct =>
         new GetCanonicalProduct({ products }),
       inject: [CANONICAL_PRODUCT_WRITE],
+    },
+    {
+      provide: GET_OFFICIAL_AUCTION_ELIGIBILITY,
+      useFactory: (getCanonicalProduct: GetCanonicalProduct): GetOfficialAuctionEligibility =>
+        new GetOfficialAuctionEligibility(getCanonicalProduct),
+      inject: [GET_CANONICAL_PRODUCT],
     },
     {
       provide: ACQUIRE_PRODUCT_UNIT,
