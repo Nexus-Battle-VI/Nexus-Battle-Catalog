@@ -14,18 +14,20 @@ export interface ProductPremiumStatusResponse {
 /**
  * Contrato interno de solo lectura del estado premium (HU-36.5).
  *
- * QUIEN LLAMA ES OTRO SERVICIO -Subasta, cuando exista- y lo demuestra
- * firmando la peticion con HMAC-SHA256, igual que
- * `InternalProductAcquisitionsController`. Es un `GET` sin efecto secundario
- * a proposito: HU-36.5 exige poder CONSULTAR la condicion premium antes de
- * permitir una reventa, no reservar ni mutar nada.
+ * QUIEN LLAMA es otro servicio -Commerce, Community o Auction (HU-62, desde
+ * que ese servicio existe)- y lo demuestra firmando la peticion con
+ * HMAC-SHA256, igual que `InternalProductAcquisitionsController`. Es un
+ * `GET` sin efecto secundario a proposito: HU-36.5 exige poder CONSULTAR la
+ * condicion premium antes de permitir una reventa, no reservar ni mutar
+ * nada; `CatalogProductPolicyClient` de Auction la usa para decidir si un
+ * producto es comerciable en subasta (HU-62).
  *
  * ESTA RUTA NO SE PUBLICA EN EL PROXY, igual que el resto de `internal/*`.
  *
- * TODAVIA NO HAY NINGUN SERVICIO AUTORIZADO A LLAMARLA: `allowedServices` en
- * `AppModule` no incluye `auction` porque ese servicio no existe todavia.
- * Anadirlo es una decision explicita para cuando se coordine, igual que la
- * lista ya documenta para `commerce`.
+ * Lista de llamadores EXPLICITA en la propia ruta -no la global de
+ * `AppModule`- porque incluye `auction` sin abrirle el resto de rutas
+ * `internal/*` que si comparten esa lista global (adquisiciones, compra
+ * premium, valoraciones, reservas de stock).
  *
  * La MUTACION relacionada -registrar una compra en moneda real, HU-36.6- vive
  * en `InternalProductPremiumPurchaseController`, deliberadamente separada de
@@ -39,7 +41,7 @@ export class InternalProductPremiumStatusController {
   ) {}
 
   @Public()
-  @InternalOnly()
+  @InternalOnly('commerce', 'community', 'auction')
   @Get(':id/premium-status')
   async getPremiumStatus(@Param('id') id: string): Promise<ProductPremiumStatusResponse> {
     try {
