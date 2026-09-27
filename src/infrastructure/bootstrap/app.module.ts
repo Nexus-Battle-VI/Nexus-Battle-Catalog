@@ -28,6 +28,9 @@ import { UpdateProductRating } from '../../application/use-cases/UpdateProductRa
 import { RegisterProductRealMoneyPurchase } from '../../application/use-cases/RegisterProductRealMoneyPurchase'
 import { ListCatalogStorefront } from '../../application/use-cases/ListCatalogStorefront'
 import type { CatalogStorefrontPort } from '../../application/ports/CatalogStorefrontPort'
+import { SearchAdminProducts } from '../../application/use-cases/SearchAdminProducts'
+import { UpdateProductDetails } from '../../application/use-cases/UpdateProductDetails'
+import type { AdminProductSearchPort } from '../../application/ports/AdminProductSearchPort'
 import { StockReservations } from '../../application/use-cases/StockReservations'
 import {
   STOCK_RESERVATIONS,
@@ -67,6 +70,8 @@ import {
   UPDATE_PRODUCT_RATING,
   UPDATE_PRODUCT_LIFECYCLE_STATUS,
   REGISTER_PRODUCT_REAL_MONEY_PURCHASE,
+  SEARCH_ADMIN_PRODUCTS,
+  UPDATE_PRODUCT_DETAILS,
   CREATE_PRODUCT_ASSET_UPLOAD_INTENT,
   FINALIZE_PRODUCT_ASSET,
   GET_PRODUCT_ASSET_CONTENT,
@@ -211,6 +216,12 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
       provide: ListCatalogStorefront,
       useFactory: (products: CatalogStorefrontPort): ListCatalogStorefront =>
         new ListCatalogStorefront(products),
+      inject: [CANONICAL_PRODUCT_REPOSITORY],
+    },
+    {
+      provide: SEARCH_ADMIN_PRODUCTS,
+      useFactory: (products: AdminProductSearchPort): SearchAdminProducts =>
+        new SearchAdminProducts(products),
       inject: [CANONICAL_PRODUCT_REPOSITORY],
     },
     {
@@ -544,6 +555,26 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
       useFactory: (products: CanonicalProductRepositoryPort): GetCanonicalProduct =>
         new GetCanonicalProduct({ products }),
       inject: [CANONICAL_PRODUCT_WRITE],
+    },
+    {
+      provide: UPDATE_PRODUCT_DETAILS,
+      useFactory: (
+        products: CanonicalProductRepositoryPort,
+        clock: ClockPort,
+        idGenerator: IdGeneratorPort,
+        unitOfWork: CanonicalProductUnitOfWorkPort,
+        audit: ProductAuditPort,
+        outbox: ProductOutboxPort,
+      ): UpdateProductDetails =>
+        new UpdateProductDetails({ products, clock, idGenerator, unitOfWork, audit, outbox }),
+      inject: [
+        CANONICAL_PRODUCT_WRITE,
+        CLOCK,
+        ID_GENERATOR,
+        CANONICAL_PRODUCT_UNIT_OF_WORK,
+        PRODUCT_AUDIT_PORT,
+        PRODUCT_OUTBOX_PORT,
+      ],
     },
     {
       provide: GET_OFFICIAL_AUCTION_ELIGIBILITY,

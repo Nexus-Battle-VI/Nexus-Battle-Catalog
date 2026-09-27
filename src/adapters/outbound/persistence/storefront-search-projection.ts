@@ -8,6 +8,10 @@ import {
   STOREFRONT_PAGE_SIZE,
   type CatalogStorefrontQuery,
 } from '../../../application/ports/CatalogStorefrontPort'
+import {
+  ADMIN_PRODUCT_SEARCH_PAGE_SIZE,
+  type AdminProductSearchQuery,
+} from '../../../application/ports/AdminProductSearchPort'
 import type { CanonicalProductDocument } from './canonical-mapping'
 
 export const STOREFRONT_SEARCH_INDEX = 'idx_products_storefront_search_v1'
@@ -90,6 +94,59 @@ export const storefrontMongoQuery = (
           items: [
             { $skip: (query.page - 1) * STOREFRONT_PAGE_SIZE },
             { $limit: STOREFRONT_PAGE_SIZE },
+          ],
+          count: [{ $count: 'total' }],
+        },
+      },
+    ],
+  }
+}
+
+/**
+ * Búsqueda administrativa: MISMOS índices que `storefrontMongoQuery` -el
+ * proyector de tokens se calcula para todo documento canónico, sin filtrar por
+ * `lifecycleStatus` (ver migración 011)-, pero SIN fijar `lifecycleStatus:
+ * ACTIVE`. `lifecycleStatus` aquí es un filtro opcional del propio llamador,
+ * no una invariante de la consulta.
+ */
+export const adminProductSearchMongoQuery = (
+  query: AdminProductSearchQuery,
+): {
+  readonly pipeline: Document[]
+  readonly hint: string
+} => {
+  const text = normalizeStorefrontText(query.query?.trim() ?? '')
+  const filter: Filter<CanonicalProductDocument> = {
+    type: query.type ?? { $exists: true },
+    ...(query.lifecycleStatus === undefined ? {} : { lifecycleStatus: query.lifecycleStatus }),
+  }
+  return {
+    hint: text === '' ? STOREFRONT_ORDER_INDEX : STOREFRONT_SEARCH_INDEX,
+    pipeline: [
+      {
+        $match: {
+          ...filter,
+          ...(text === ''
+            ? {}
+            : { storefrontSearchTokens: { $all: grams(text, [Math.min(3, text.length)]) } }),
+        },
+      },
+      ...(text === ''
+        ? []
+        : [
+            {
+              $match: {
+                $expr: { $gte: [{ $indexOfCP: ['$storefrontSearchText', { $literal: text }] }, 0] },
+              },
+            },
+          ]),
+      { $sort: { normalizedName: 1, _id: 1 } },
+      { $project: { storefrontSearchText: 0, storefrontSearchTokens: 0 } },
+      {
+        $facet: {
+          items: [
+            { $skip: (query.page - 1) * ADMIN_PRODUCT_SEARCH_PAGE_SIZE },
+            { $limit: ADMIN_PRODUCT_SEARCH_PAGE_SIZE },
           ],
           count: [{ $count: 'total' }],
         },
