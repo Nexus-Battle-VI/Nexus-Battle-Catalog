@@ -18,6 +18,11 @@ import {
   type CatalogStorefrontPort,
   type CatalogStorefrontQuery,
 } from '../../../application/ports/CatalogStorefrontPort'
+import {
+  ADMIN_PRODUCT_SEARCH_PAGE_SIZE,
+  type AdminProductSearchPort,
+  type AdminProductSearchQuery,
+} from '../../../application/ports/AdminProductSearchPort'
 import { storefrontMatches } from '../../../domain/services/storefront-search'
 import type { StockReservationLine } from '../../../application/ports/StockReservationPort'
 import { StockReservationRejectedError } from '../../../application/use-cases/StockReservations'
@@ -29,7 +34,7 @@ import { StockReservationRejectedError } from '../../../application/use-cases/St
  * un comportamiento distinto al cambiar de driver.
  */
 export class InMemoryCanonicalProductRepository
-  implements CanonicalProductRepositoryPort, CatalogStorefrontPort
+  implements CanonicalProductRepositoryPort, CatalogStorefrontPort, AdminProductSearchPort
 {
   private readonly byId = new Map<string, CanonicalProduct>()
   private readonly bySku = new Map<string, string>()
@@ -78,6 +83,26 @@ export class InMemoryCanonicalProductRepository
     if (existing?.version !== expectedVersion) {
       return Promise.reject(
         new CanonicalProductConcurrencyConflictError(product.productId.value, expectedVersion),
+      )
+    }
+
+    // Mismo conflicto que Mongo (`uniq_active_product_name_type`, parcial a
+    // ACTIVE): hasta que `UpdateProductDetails` existio, `update()` nunca
+    // podia cambiar `name`, asi que esta comprobacion no hacia falta. Ahora
+    // que si puede, sin ella el almacen en memoria dejaria pasar en silencio
+    // una renombrada que Mongo rechazaria con 409.
+    if (
+      product.lifecycleStatus === 'ACTIVE' &&
+      [...this.byId.values()].some(
+        (current) =>
+          current.productId.value !== product.productId.value &&
+          current.normalizedName === product.normalizedName &&
+          current.type === product.type &&
+          current.lifecycleStatus === 'ACTIVE',
+      )
+    ) {
+      return Promise.reject(
+        new CanonicalProductAlreadyExistsError(product.name.value, product.type),
       )
     }
 
@@ -133,6 +158,7 @@ export class InMemoryCanonicalProductRepository
       .filter((product) => {
         if (product.lifecycleStatus !== 'ACTIVE') return false
         if (query.type !== undefined && product.type !== query.type) return false
+        if (query.premium !== undefined && product.premium !== query.premium) return false
         const price = product.realMoneyPrice
         if (query.currency !== undefined && price?.currency !== query.currency) return false
         if (query.minPrice !== undefined && (price === null || price.amount < query.minPrice))
@@ -151,6 +177,40 @@ export class InMemoryCanonicalProductRepository
     const offset = (query.page - 1) * STOREFRONT_PAGE_SIZE
     return Promise.resolve({
       items: matching.slice(offset, offset + STOREFRONT_PAGE_SIZE),
+      total: matching.length,
+    })
+  }
+
+  /** Mismo filtrado literal que `listStorefront`, sin fijar `lifecycleStatus`. */
+  searchAdminProducts(
+    query: AdminProductSearchQuery,
+  ): Promise<{ items: readonly CanonicalProduct[]; total: number }> {
+    const matching = [...this.byId.values()]
+      .filter((product) => {
+        if (query.type !== undefined && product.type !== query.type) return false
+        if (
+          query.type === undefined &&
+          query.excludeType !== undefined &&
+          product.type === query.excludeType
+        )
+          return false
+        if (
+          query.lifecycleStatus !== undefined &&
+          product.lifecycleStatus !== query.lifecycleStatus
+        )
+          return false
+        return storefrontMatches(product.toSnapshot(), query.query)
+      })
+      .sort((a, b) =>
+        a.normalizedName < b.normalizedName
+          ? -1
+          : a.normalizedName > b.normalizedName
+            ? 1
+            : a.productId.value.localeCompare(b.productId.value),
+      )
+    const offset = (query.page - 1) * ADMIN_PRODUCT_SEARCH_PAGE_SIZE
+    return Promise.resolve({
+      items: matching.slice(offset, offset + ADMIN_PRODUCT_SEARCH_PAGE_SIZE),
       total: matching.length,
     })
   }

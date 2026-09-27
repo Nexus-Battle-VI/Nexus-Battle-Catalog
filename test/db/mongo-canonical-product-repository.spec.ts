@@ -366,6 +366,27 @@ describe('MongoCanonicalProductRepository', () => {
     )
   })
 
+  it('renombrar via update() choca con el mismo indice unico que create() (UpdateProductDetails)', async () => {
+    const ocupante = buildProduct(...ATTRIBUTE_FIXTURES[2], { name: 'Nombre Ya Ocupado' })
+    const producto = buildProduct(...ATTRIBUTE_FIXTURES[2], { name: 'Nombre Original' })
+    await repository.create(ocupante)
+    await repository.create(producto)
+
+    // Exactamente lo que `UpdateProductDetails` produciria al renombrar
+    // `producto` para que coincida con `ocupante` (mismo tipo, ambos activos).
+    const renombrado = producto.updateDetails(
+      { name: ocupante.name },
+      new Date('2026-09-06T00:00:00.000Z'),
+    )
+
+    await expect(repository.update(renombrado, producto.version)).rejects.toBeInstanceOf(
+      CanonicalProductAlreadyExistsError,
+    )
+
+    const sinCambios = await repository.findById(producto.productId)
+    expect(sinCambios?.name.value).toBe('Nombre Original')
+  })
+
   describe('updateRating (HU-40, CA-03)', () => {
     it('aplica el agregado y avanza la version', async () => {
       const product = buildProduct(...ATTRIBUTE_FIXTURES[2])

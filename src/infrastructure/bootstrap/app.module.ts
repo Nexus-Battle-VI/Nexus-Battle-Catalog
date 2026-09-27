@@ -14,6 +14,7 @@ import { CanonicalProductsController } from '../../adapters/inbound/http/canonic
 import { AdminProductsController } from '../../adapters/inbound/http/admin-products.controller'
 import { InternalProductAcquisitionsController } from '../../adapters/inbound/http/internal-product-acquisitions.controller'
 import { InternalProductPremiumStatusController } from '../../adapters/inbound/http/internal-product-premium-status.controller'
+import { InternalOfficialAuctionEligibilityController } from '../../adapters/inbound/http/internal-official-auction-eligibility.controller'
 import { InternalProductPremiumPurchaseController } from '../../adapters/inbound/http/internal-product-premium-purchase.controller'
 import { InternalProductRatingController } from '../../adapters/inbound/http/internal-product-rating.controller'
 import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
@@ -21,11 +22,15 @@ import { AdjustProductInventory } from '../../application/use-cases/AdjustProduc
 import { ConfigureProductPremium } from '../../application/use-cases/ConfigureProductPremium'
 import { UpdateProductLifecycleStatus } from '../../application/use-cases/UpdateProductLifecycleStatus'
 import { GetCanonicalProduct } from '../../application/use-cases/GetCanonicalProduct'
+import { GetOfficialAuctionEligibility } from '../../application/use-cases/GetOfficialAuctionEligibility'
 import { AcquireProductUnit } from '../../application/use-cases/AcquireProductUnit'
 import { UpdateProductRating } from '../../application/use-cases/UpdateProductRating'
 import { RegisterProductRealMoneyPurchase } from '../../application/use-cases/RegisterProductRealMoneyPurchase'
 import { ListCatalogStorefront } from '../../application/use-cases/ListCatalogStorefront'
 import type { CatalogStorefrontPort } from '../../application/ports/CatalogStorefrontPort'
+import { SearchAdminProducts } from '../../application/use-cases/SearchAdminProducts'
+import { UpdateProductDetails } from '../../application/use-cases/UpdateProductDetails'
+import type { AdminProductSearchPort } from '../../application/ports/AdminProductSearchPort'
 import { StockReservations } from '../../application/use-cases/StockReservations'
 import {
   STOCK_RESERVATIONS,
@@ -60,10 +65,13 @@ import {
   ADJUST_PRODUCT_INVENTORY,
   CONFIGURE_PRODUCT_PREMIUM,
   GET_CANONICAL_PRODUCT,
+  GET_OFFICIAL_AUCTION_ELIGIBILITY,
   ACQUIRE_PRODUCT_UNIT,
   UPDATE_PRODUCT_RATING,
   UPDATE_PRODUCT_LIFECYCLE_STATUS,
   REGISTER_PRODUCT_REAL_MONEY_PURCHASE,
+  SEARCH_ADMIN_PRODUCTS,
+  UPDATE_PRODUCT_DETAILS,
   CREATE_PRODUCT_ASSET_UPLOAD_INTENT,
   FINALIZE_PRODUCT_ASSET,
   GET_PRODUCT_ASSET_CONTENT,
@@ -174,6 +182,7 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
     AdminProductsController,
     InternalProductAcquisitionsController,
     InternalProductPremiumStatusController,
+    InternalOfficialAuctionEligibilityController,
     InternalProductPremiumPurchaseController,
     InternalProductRatingController,
     InternalStockReservationsController,
@@ -207,6 +216,12 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
       provide: ListCatalogStorefront,
       useFactory: (products: CatalogStorefrontPort): ListCatalogStorefront =>
         new ListCatalogStorefront(products),
+      inject: [CANONICAL_PRODUCT_REPOSITORY],
+    },
+    {
+      provide: SEARCH_ADMIN_PRODUCTS,
+      useFactory: (products: AdminProductSearchPort): SearchAdminProducts =>
+        new SearchAdminProducts(products),
       inject: [CANONICAL_PRODUCT_REPOSITORY],
     },
     {
@@ -542,6 +557,32 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
       inject: [CANONICAL_PRODUCT_WRITE],
     },
     {
+      provide: UPDATE_PRODUCT_DETAILS,
+      useFactory: (
+        products: CanonicalProductRepositoryPort,
+        clock: ClockPort,
+        idGenerator: IdGeneratorPort,
+        unitOfWork: CanonicalProductUnitOfWorkPort,
+        audit: ProductAuditPort,
+        outbox: ProductOutboxPort,
+      ): UpdateProductDetails =>
+        new UpdateProductDetails({ products, clock, idGenerator, unitOfWork, audit, outbox }),
+      inject: [
+        CANONICAL_PRODUCT_WRITE,
+        CLOCK,
+        ID_GENERATOR,
+        CANONICAL_PRODUCT_UNIT_OF_WORK,
+        PRODUCT_AUDIT_PORT,
+        PRODUCT_OUTBOX_PORT,
+      ],
+    },
+    {
+      provide: GET_OFFICIAL_AUCTION_ELIGIBILITY,
+      useFactory: (getCanonicalProduct: GetCanonicalProduct): GetOfficialAuctionEligibility =>
+        new GetOfficialAuctionEligibility(getCanonicalProduct),
+      inject: [GET_CANONICAL_PRODUCT],
+    },
+    {
       provide: ACQUIRE_PRODUCT_UNIT,
       useFactory: (
         products: CanonicalProductRepositoryPort,
@@ -648,7 +689,7 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
           })
         }
         logger.info('product_asset_storage', { driver: 'memory' })
-        return new InMemoryProductAssetStorageAdapter()
+        return new InMemoryProductAssetStorageAdapter({ apiBaseUrl: config.assetsBaseUrl })
       },
       inject: [APP_CONFIG, LOGGER],
     },

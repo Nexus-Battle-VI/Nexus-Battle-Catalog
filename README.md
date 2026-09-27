@@ -1,5 +1,8 @@
 # Nexus-Battle-Catalog
 
+Contrato HMAC para que Auction consulte productos exclusivos y su marca:
+[elegibilidad de subasta oficial](docs/official-auction-eligibility-contract.md).
+
 Contrato de vitrina canónica y reserva de stock para compra simulada:
 [integración ecommerce](docs/ecommerce-contract.md).
 

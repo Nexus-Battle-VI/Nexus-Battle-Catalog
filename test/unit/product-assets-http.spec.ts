@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   NotFoundException,
   ServiceUnavailableException,
@@ -59,7 +60,7 @@ describe('Product Assets HTTP Controllers (Admin & Catalog)', () => {
     })
 
     adminController = new AdminProductAssetsController(createUploadIntent, finalizeAsset)
-    catalogController = new CatalogProductAssetsController(getContent)
+    catalogController = new CatalogProductAssetsController(getContent, storage)
   })
 
   it('POST /uploads genera un formulario firmado 201', async () => {
@@ -264,9 +265,76 @@ describe('Product Assets HTTP Controllers (Admin & Catalog)', () => {
       .spyOn(getContentThrow, 'execute')
       .mockRejectedValue(new ProductAssetStorageUnavailableError('down'))
 
-    const ctrl = new CatalogProductAssetsController(getContentThrow)
+    const ctrl = new CatalogProductAssetsController(getContentThrow, storage)
     const mockRes = {} as unknown as Response
 
     await expect(ctrl.getContent('asset-id', mockRes)).rejects.toThrow(ServiceUnavailableException)
+  })
+
+  describe('POST /mock-uploads y GET /mock-downloads (sustituto local de S3, driver memory)', () => {
+    it('sube el archivo y lo deja disponible para descarga', async () => {
+      const file = { buffer: Buffer.from('contenido-de-prueba'), mimetype: 'image/png' }
+
+      const uploadResult = catalogController.mockUpload(file, 'staging/mock-key', 'image/png')
+      expect(uploadResult).toEqual({ ok: true })
+      expect(storage.hasObject('staging/mock-key')).toBe(true)
+
+      const headers: Record<string, string> = {}
+      let sentBody: Buffer | undefined
+      const mockRes = {
+        setHeader: (name: string, value: string) => {
+          headers[name] = value
+        },
+        send: (body: Buffer) => {
+          sentBody = body
+        },
+      } as unknown as Response
+      await catalogController.mockDownload('staging/mock-key', mockRes)
+
+      expect(headers['Content-Type']).toBe('image/png')
+      expect(sentBody).toEqual(file.buffer)
+    })
+
+    it('rechaza la subida sin el campo "file"', () => {
+      expect(() =>
+        catalogController.mockUpload(undefined, 'staging/mock-key', 'image/png'),
+      ).toThrow(BadRequestException)
+    })
+
+    it('rechaza la subida sin el campo "key"', () => {
+      const file = { buffer: Buffer.from('x'), mimetype: 'image/png' }
+      expect(() => catalogController.mockUpload(file, undefined, 'image/png')).toThrow(
+        BadRequestException,
+      )
+    })
+
+    it('descarga responde 404 si la clave no existe', async () => {
+      const mockRes = { setHeader: jest.fn(), send: jest.fn() } as unknown as Response
+      await expect(catalogController.mockDownload('staging/no-existe', mockRes)).rejects.toThrow(
+        NotFoundException,
+      )
+    })
+
+    it('ambas rutas responden 503 cuando el almacenamiento activo no es el de memoria (driver s3)', async () => {
+      const s3LikeStorage = {
+        createUploadIntent: jest.fn(),
+        getObject: jest.fn(),
+        getObjectMetadata: jest.fn(),
+        promoteObject: jest.fn(),
+        deleteObject: jest.fn(),
+        getPresignedDownloadUrl: jest.fn(),
+        listObjectsWithPrefix: jest.fn(),
+      }
+      const ctrl = new CatalogProductAssetsController(getContent, s3LikeStorage)
+      const file = { buffer: Buffer.from('x'), mimetype: 'image/png' }
+      const mockRes = { setHeader: jest.fn(), send: jest.fn() } as unknown as Response
+
+      expect(() => ctrl.mockUpload(file, 'staging/mock-key', 'image/png')).toThrow(
+        ServiceUnavailableException,
+      )
+      await expect(ctrl.mockDownload('staging/mock-key', mockRes)).rejects.toThrow(
+        ServiceUnavailableException,
+      )
+    })
   })
 })

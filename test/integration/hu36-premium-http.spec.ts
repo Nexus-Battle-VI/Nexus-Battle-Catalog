@@ -214,21 +214,25 @@ describe('HU-36 sobre HTTP', () => {
   })
 
   describe('GET /api/internal/v1/catalog/products/{id}/premium-status', () => {
-    const firmar = (path: string): Record<string, string> => {
-      const timestamp = String(Date.now())
+    const firmarComo =
+      (service: string) =>
+      (path: string): Record<string, string> => {
+        const timestamp = String(Date.now())
 
-      return {
-        [INTERNAL_SERVICE_HEADER]: 'commerce',
-        [INTERNAL_TIMESTAMP_HEADER]: timestamp,
-        [INTERNAL_SIGNATURE_HEADER]: signInternalRequest(SECRETO_DE_PRUEBAS, {
-          service: 'commerce',
-          method: 'GET',
-          path,
-          timestamp,
-          body: {},
-        }),
+        return {
+          [INTERNAL_SERVICE_HEADER]: service,
+          [INTERNAL_TIMESTAMP_HEADER]: timestamp,
+          [INTERNAL_SIGNATURE_HEADER]: signInternalRequest(SECRETO_DE_PRUEBAS, {
+            service,
+            method: 'GET',
+            path,
+            timestamp,
+            body: {},
+          }),
+        }
       }
-    }
+
+    const firmar = firmarComo('commerce')
 
     it('responde el estado premium sin mutar nada', async () => {
       const id = await crearProducto('corona-cinco')
@@ -296,6 +300,31 @@ describe('HU-36 sobre HTTP', () => {
       await request(app.getHttpServer())
         .get(`/api/internal/v1/catalog/products/${id}/premium-status`)
         .expect(401)
+    })
+
+    /**
+     * HU-62: Auction consulta esta ruta desde `CatalogProductPolicyClient`
+     * para decidir si un producto es comerciable en subasta. Antes de este
+     * caso, la lista de llamadores de esta ruta especifica no incluia
+     * `auction` y la llamada real de Auction habria recibido 401/403.
+     */
+    it('HU-62: el caller auction tambien puede consultar el estado premium', async () => {
+      const id = await crearProducto('corona-doce')
+      const path = `/api/internal/v1/catalog/products/${id}/premium-status`
+
+      const respuesta = await request(app.getHttpServer())
+        .get(path)
+        .set(firmarComo('auction')(path))
+        .expect(200)
+
+      expect(respuesta.body).toEqual({ productId: id, premium: false })
+    })
+
+    it('un caller sin autorizar en esta ruta sigue recibiendo 401', async () => {
+      const id = await crearProducto('corona-trece')
+      const path = `/api/internal/v1/catalog/products/${id}/premium-status`
+
+      await request(app.getHttpServer()).get(path).set(firmarComo('combat')(path)).expect(401)
     })
 
     it('un producto inexistente es 404', async () => {
