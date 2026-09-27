@@ -689,7 +689,7 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
           })
         }
         logger.info('product_asset_storage', { driver: 'memory' })
-        return new InMemoryProductAssetStorageAdapter()
+        return new InMemoryProductAssetStorageAdapter({ apiBaseUrl: config.assetsBaseUrl })
       },
       inject: [APP_CONFIG, LOGGER],
     },

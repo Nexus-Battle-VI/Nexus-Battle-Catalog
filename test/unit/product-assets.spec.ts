@@ -531,6 +531,51 @@ describe('Product Assets Management (HU-33.8 / ADR-016)', () => {
       )
     })
 
+    it('con apiBaseUrl configurado, sube y descarga contra las rutas mock reales en vez de test-s3.local', async () => {
+      const localStorage = new InMemoryProductAssetStorageAdapter({
+        apiBaseUrl: 'http://localhost:18080/',
+      })
+      const localRepository = new InMemoryProductAssetRepository()
+      const localCreateIntent = new CreateProductAssetUploadIntent({
+        storage: localStorage,
+        repository: localRepository,
+        idGenerator: mockIdGenerator,
+        clock: mockClock,
+        apiBaseUrl: 'http://localhost:18080',
+      })
+      const localFinalize = new FinalizeProductAsset({
+        storage: localStorage,
+        repository: localRepository,
+        clock: mockClock,
+      })
+      const localGetContent = new GetProductAssetContent({
+        storage: localStorage,
+        repository: localRepository,
+      })
+
+      const validPng = createPngBuffer({ width: 512, height: 512 })
+      const hash = hashSha256(validPng)
+      const intent = await localCreateIntent.execute({
+        purpose: 'PRIMARY_IMAGE',
+        contentType: 'image/png',
+        contentLength: validPng.length,
+        checksumSha256: hash.hex,
+      })
+
+      // Sin la barra final duplicada del apiBaseUrl con "/" de sobra.
+      expect(intent.upload.url).toBe(
+        'http://localhost:18080/api/v1/catalog/product-assets/mock-uploads',
+      )
+
+      localStorage.putObjectDirectly(intent.upload.fields.key!, validPng, 'image/png')
+      await localFinalize.execute(intent.assetId)
+
+      const downloadUrl = await localGetContent.execute(intent.assetId)
+      expect(downloadUrl).toMatch(
+        /^http:\/\/localhost:18080\/api\/v1\/catalog\/product-assets\/mock-downloads\/assets%2F/u,
+      )
+    })
+
     it('reconciliador: purga objetos de staging huérfanos con más de 24 horas', async () => {
       const oldDate = new Date(currentTime.getTime() - 25 * 60 * 60 * 1000)
       storage.putObjectDirectly('staging/orphan-old', Buffer.from('old-data'), 'image/png', oldDate)
