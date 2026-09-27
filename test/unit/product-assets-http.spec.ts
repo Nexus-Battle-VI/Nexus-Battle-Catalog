@@ -296,9 +296,9 @@ describe('Product Assets HTTP Controllers (Admin & Catalog)', () => {
     })
 
     it('rechaza la subida sin el campo "file"', () => {
-      expect(() => catalogController.mockUpload(undefined, 'staging/mock-key', 'image/png')).toThrow(
-        BadRequestException,
-      )
+      expect(() =>
+        catalogController.mockUpload(undefined, 'staging/mock-key', 'image/png'),
+      ).toThrow(BadRequestException)
     })
 
     it('rechaza la subida sin el campo "key"', () => {
