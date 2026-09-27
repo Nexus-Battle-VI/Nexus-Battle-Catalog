@@ -18,6 +18,8 @@ export const ADMIN_PRODUCT_SEARCH_PAGE_SIZE = STOREFRONT_PAGE_SIZE
 export interface AdminProductSearchQuery {
   readonly query?: string
   readonly type?: ProductType
+  /** Ignorado si `type` tambien viene informado. Vease AdminProductSearchRequest.excludeType. */
+  readonly excludeType?: ProductType
   /** Sin filtro, incluye TODOS los estados (ACTIVE y SUSPENDED). */
   readonly lifecycleStatus?: LifecycleStatus
   readonly page: number

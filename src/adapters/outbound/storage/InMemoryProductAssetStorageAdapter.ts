@@ -10,8 +10,31 @@ interface StoredEntry {
   lastModified: Date
 }
 
+export interface InMemoryProductAssetStorageConfig {
+  /**
+   * Origen publico desde el que el navegador puede alcanzar este mismo
+   * servicio (misma variable `API_BASE_URL` que ya usa `imageUrl` para el
+   * contenido descargado). Sin ella -tal como la instancian hoy la mayoria de
+   * pruebas- se mantienen las URLs `test-s3.local` de siempre: opacas y
+   * suficientes quando quien sube el archivo es un mock de `fetch`, nunca un
+   * navegador real.
+   *
+   * CON ella -el caso del stack local en Docker-, la subida y la descarga se
+   * redirigen a rutas reales de este mismo controlador (`mock-uploads` /
+   * `mock-downloads`), porque un navegador real SI intenta resolver esa URL
+   * por DNS y `test-s3.local` no existe (de ahi el "Failed to fetch" al crear
+   * un producto con imagen en el stack local).
+   */
+  readonly apiBaseUrl?: string
+}
+
 export class InMemoryProductAssetStorageAdapter implements ProductAssetStoragePort {
   private readonly objects = new Map<string, StoredEntry>()
+  private readonly apiBaseUrl: string
+
+  constructor(config: InMemoryProductAssetStorageConfig = {}) {
+    this.apiBaseUrl = (config.apiBaseUrl ?? '').replace(/\/+$/u, '')
+  }
 
   createUploadIntent(params: {
     assetId: string
@@ -25,7 +48,10 @@ export class InMemoryProductAssetStorageAdapter implements ProductAssetStoragePo
     const expiresAt = new Date(Date.now() + params.expiresInSeconds * 1000)
 
     return Promise.resolve({
-      uploadUrl: `https://test-s3.local/upload`,
+      uploadUrl:
+        this.apiBaseUrl === ''
+          ? `https://test-s3.local/upload`
+          : `${this.apiBaseUrl}/api/v1/catalog/product-assets/mock-uploads`,
       fields: {
         key: stagingKey,
         'Content-Type': params.contentType,
@@ -85,7 +111,12 @@ export class InMemoryProductAssetStorageAdapter implements ProductAssetStoragePo
     if (!entry) {
       return Promise.reject(new Error(`Objeto no encontrado para descarga: "${key}".`))
     }
-    return Promise.resolve(`https://test-s3.local/download/${key}?sig=presigned-mock`)
+    if (this.apiBaseUrl === '') {
+      return Promise.resolve(`https://test-s3.local/download/${key}?sig=presigned-mock`)
+    }
+    return Promise.resolve(
+      `${this.apiBaseUrl}/api/v1/catalog/product-assets/mock-downloads/${encodeURIComponent(key)}`,
+    )
   }
 
   listObjectsWithPrefix(

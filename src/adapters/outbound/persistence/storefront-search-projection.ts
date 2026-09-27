@@ -59,6 +59,7 @@ export const storefrontMongoQuery = (
   const filter: Filter<CanonicalProductDocument> = {
     lifecycleStatus: 'ACTIVE',
     type: query.type ?? { $exists: true },
+    ...(query.premium === undefined ? {} : { premium: query.premium }),
   }
   if (query.currency !== undefined) filter['realMoneyPrice.currency'] = query.currency
   if (query.minPrice !== undefined || query.maxPrice !== undefined) {
@@ -116,8 +117,13 @@ export const adminProductSearchMongoQuery = (
   readonly hint: string
 } => {
   const text = normalizeStorefrontText(query.query?.trim() ?? '')
+  // `excludeType` se ignora si `type` tambien viene informado: un tipo
+  // concreto pedido explicitamente prevalece siempre sobre la exclusion por
+  // defecto (vease AdminProductSearchRequest.excludeType).
+  const typeClause =
+    query.type ?? (query.excludeType !== undefined ? { $ne: query.excludeType } : { $exists: true })
   const filter: Filter<CanonicalProductDocument> = {
-    type: query.type ?? { $exists: true },
+    type: typeClause,
     ...(query.lifecycleStatus === undefined ? {} : { lifecycleStatus: query.lifecycleStatus }),
   }
   return {

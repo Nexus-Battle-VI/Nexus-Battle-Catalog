@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { Type } from 'class-transformer'
-import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator'
+import { Transform, Type } from 'class-transformer'
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator'
 import { CanonicalProductResponse } from './canonical-products.dto'
 
 export class CatalogStorefrontRequest {
@@ -46,6 +46,19 @@ export class CatalogStorefrontRequest {
   @IsOptional()
   @IsIn(['COP', 'USD', 'EUR'])
   currency?: string
+
+  @ApiPropertyOptional({
+    description:
+      'Filtra por la condición premium. La vitrina de e-commerce SIEMPRE debe enviar true: sin este filtro, la paginación cuenta también productos no comercializables (p. ej. habilidades base de un héroe) y una página puede llegar casi vacía.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => {
+    if (value === 'true') return true
+    if (value === 'false') return false
+    return value
+  })
+  @IsBoolean()
+  premium?: boolean
 
   @ApiPropertyOptional({ minimum: 1, default: 1 })
   @IsOptional()
