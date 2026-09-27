@@ -1,5 +1,6 @@
 import {
   SetMetadata,
+  applyDecorators,
   UnauthorizedException,
   createParamDecorator,
   type ExecutionContext,
@@ -11,6 +12,7 @@ export const IS_PUBLIC = 'auth:public'
 export const REQUIRED_ROLES = 'auth:roles'
 export const REQUIRES_MFA_EVIDENCE = 'auth:mfa-evidence'
 export const IS_INTERNAL = 'auth:internal'
+export const INTERNAL_ALLOWED_SERVICES = 'auth:internal-allowed-services'
 
 /**
  * Marca una ruta como accesible sin testimonio.
@@ -82,4 +84,10 @@ export const CurrentIdentity = createParamDecorator(
  * internet. Esa es una segunda linea, no la primera: la firma protege aunque
  * alguien anada la ruta al proxy sin darse cuenta.
  */
-export const InternalOnly = (): MethodDecorator & ClassDecorator => SetMetadata(IS_INTERNAL, true)
+export const InternalOnly = (
+  ...allowedServices: readonly string[]
+): MethodDecorator & ClassDecorator =>
+  applyDecorators(
+    SetMetadata(IS_INTERNAL, true),
+    SetMetadata(INTERNAL_ALLOWED_SERVICES, allowedServices),
+  )

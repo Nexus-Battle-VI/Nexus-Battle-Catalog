@@ -29,7 +29,11 @@ import {
   type CatalogStorefrontPort,
   type CatalogStorefrontQuery,
 } from '../../../application/ports/CatalogStorefrontPort'
-import { storefrontMongoQuery } from './storefront-search-projection'
+import type {
+  AdminProductSearchPort,
+  AdminProductSearchQuery,
+} from '../../../application/ports/AdminProductSearchPort'
+import { adminProductSearchMongoQuery, storefrontMongoQuery } from './storefront-search-projection'
 import {
   toCanonicalDocument,
   toCanonicalProduct,
@@ -39,7 +43,7 @@ import {
 
 /** Escritura canónica aditiva sobre la misma colección que conserva el legado. */
 export class MongoCanonicalProductRepository
-  implements CanonicalProductRepositoryPort, CatalogStorefrontPort
+  implements CanonicalProductRepositoryPort, CatalogStorefrontPort, AdminProductSearchPort
 {
   private readonly products: Collection<CanonicalProductDocument>
 
@@ -128,6 +132,27 @@ export class MongoCanonicalProductRepository
     query: CatalogStorefrontQuery,
   ): Promise<{ items: readonly CanonicalProduct[]; total: number }> {
     const { pipeline, hint } = storefrontMongoQuery(query)
+    const [result] = await this.products
+      .aggregate<{
+        items: CanonicalProductDocument[]
+        count: { total: number | Long }[]
+      }>(pipeline, { hint, allowDiskUse: true })
+      .toArray()
+    const total = result?.count[0]?.total ?? 0
+    return {
+      items: (result?.items ?? []).map(toCanonicalProduct),
+      total: typeof total === 'number' ? total : total.toNumber(),
+    }
+  }
+
+  /**
+   * Búsqueda administrativa: mismo índice de tokens que `listStorefront`, sin
+   * fijar `lifecycleStatus: ACTIVE` (ver `AdminProductSearchPort`).
+   */
+  async searchAdminProducts(
+    query: AdminProductSearchQuery,
+  ): Promise<{ items: readonly CanonicalProduct[]; total: number }> {
+    const { pipeline, hint } = adminProductSearchMongoQuery(query)
     const [result] = await this.products
       .aggregate<{
         items: CanonicalProductDocument[]

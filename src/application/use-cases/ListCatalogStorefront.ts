@@ -9,6 +9,7 @@ export interface ListCatalogStorefrontCommand {
   readonly minPrice?: number
   readonly maxPrice?: number
   readonly currency?: string
+  readonly premium?: boolean
   readonly page?: number
 }
 
