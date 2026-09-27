@@ -27,3 +27,5 @@ export const GET_OFFICIAL_AUCTION_ELIGIBILITY = Symbol('GetOfficialAuctionEligib
 export const UPDATE_PRODUCT_RATING = Symbol('UpdateProductRating')
 export const UPDATE_PRODUCT_LIFECYCLE_STATUS = Symbol('UpdateProductLifecycleStatus')
 export const REGISTER_PRODUCT_REAL_MONEY_PURCHASE = Symbol('RegisterProductRealMoneyPurchase')
+export const SEARCH_ADMIN_PRODUCTS = Symbol('SearchAdminProducts')
+export const UPDATE_PRODUCT_DETAILS = Symbol('UpdateProductDetails')

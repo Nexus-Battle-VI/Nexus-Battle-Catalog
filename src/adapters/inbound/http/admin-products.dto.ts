@@ -1,10 +1,26 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { IsBoolean, IsIn, IsInt, IsString, ValidateIf, ValidateNested } from 'class-validator'
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Length,
+  Max,
+  MaxLength,
+  Min,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator'
 import { Type } from 'class-transformer'
 
-import { RealMoneyPriceRequest } from './canonical-products.dto'
+import { CanonicalProductResponse, RealMoneyPriceRequest } from './canonical-products.dto'
 
 export { CanonicalProductResponse } from './canonical-products.dto'
+
+const PRODUCT_TYPES = ['HEROE', 'HABILIDAD', 'ARMA', 'ARMADURA', 'ITEM', 'EPICA'] as const
+const LIFECYCLE_STATUSES = ['ACTIVE', 'SUSPENDED'] as const
 
 /**
  * Cuerpo del ajuste de tiraje (HU-34, CA-02).
@@ -81,4 +97,105 @@ export class UpdateProductStatusRequest {
   })
   @IsString()
   reason!: string
+}
+
+/**
+ * Cuerpo de la edicion de campos de presentacion.
+ *
+ * SOLO `name`, `imageUrl`, `description`. `type` y `attributes` NO se
+ * declaran aqui a proposito -no es un descuido de la lista blanca-: con
+ * `whitelist: true` y `forbidNonWhitelisted: true` en el `ValidationPipe`
+ * global (`main.ts`), cualquier cliente que los envie recibe 400 antes de que
+ * el caso de uso llegue a verlos. Combat empareja efectos por `type` y
+ * Player-Inventory calcula equipo por `attributes`; editarlos aqui rompería
+ * un contrato que otros bounded contexts ya consumen.
+ *
+ * Los TRES campos son opcionales -se admite cualquier subconjunto-, pero al
+ * menos uno es obligatorio; esa regla de forma (igual de "forma" que el
+ * motivo de HU-35) se valida en el caso de uso con `schema-validation.ts`, no
+ * aqui, para no duplicar el mensaje en dos capas.
+ *
+ * Los mismos limites de longitud/formato que `CreateCanonicalProductRequest`
+ * (creacion): el mismo campo no puede aceptar un rango distinto solo porque
+ * llega por la ruta de edicion.
+ */
+export class UpdateProductDetailsRequest {
+  @ApiPropertyOptional({ minLength: 3, maxLength: 80, example: 'Espada de Fuego' })
+  @IsOptional()
+  @IsString()
+  @Length(3, 80)
+  name?: string
+
+  @ApiPropertyOptional({
+    format: 'uri',
+    example: 'https://assets.example.test/catalog/espada.webp',
+  })
+  @IsOptional()
+  @IsString()
+  @IsUrl({ require_protocol: true, require_tld: false })
+  imageUrl?: string
+
+  @ApiPropertyOptional({ minLength: 1, example: 'Espada de dos manos con daño de fuego.' })
+  @IsOptional()
+  @IsString()
+  @Length(1, 10_000)
+  description?: string
+}
+
+/**
+ * Filtros de la busqueda administrativa (crear/editar/eliminar/buscar
+ * productos, pedido explicito del cliente del proyecto).
+ *
+ * A DIFERENCIA de `CatalogStorefrontRequest` (vitrina publica), `type` no es
+ * el unico filtro de estado: `lifecycleStatus` permite ver TAMBIEN los
+ * productos suspendidos, que la vitrina publica nunca expone. Sin filtro se
+ * devuelven ambos estados.
+ *
+ * Misma convencion de paginacion que `CatalogStorefrontRequest`: pagina 1-based,
+ * paginas estables de 16 productos (`ADMIN_PRODUCT_SEARCH_PAGE_SIZE`), para que
+ * los dos listados no diverjan en estilo.
+ */
+export class AdminProductSearchRequest {
+  @ApiPropertyOptional({
+    description: 'Busqueda literal en nombre, descripcion, SKU, tipo, atributos y precios.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  query?: string
+
+  @ApiPropertyOptional({ enum: PRODUCT_TYPES })
+  @IsOptional()
+  @IsIn(PRODUCT_TYPES)
+  type?: string
+
+  @ApiPropertyOptional({
+    enum: LIFECYCLE_STATUSES,
+    description: 'Sin filtro, incluye productos ACTIVE y SUSPENDED.',
+  })
+  @IsOptional()
+  @IsIn(LIFECYCLE_STATUSES)
+  lifecycleStatus?: string
+
+  @ApiPropertyOptional({ minimum: 1, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(Math.floor(Number.MAX_SAFE_INTEGER / 16))
+  page?: number
+}
+
+export class AdminProductSearchResponse {
+  @ApiProperty({ type: CanonicalProductResponse, isArray: true })
+  items!: CanonicalProductResponse[]
+
+  @ApiProperty({ minimum: 1 })
+  page!: number
+
+  @ApiProperty({ enum: [16] })
+  pageSize!: 16
+
+  @ApiProperty({ minimum: 0 })
+  total!: number
 }

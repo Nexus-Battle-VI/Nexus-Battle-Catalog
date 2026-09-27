@@ -348,6 +348,53 @@ export class CanonicalProduct {
     })
   }
 
+  /**
+   * Actualiza los campos de presentacion: nombre, imagen y/o descripcion.
+   *
+   * SOLO ESTOS TRES CAMPOS. `type` y `attributes` no tienen parametro aqui a
+   * proposito -ni siquiera opcional-: Combat empareja efectos por `type` y
+   * Player-Inventory calcula equipo por `attributes`, asi que son un limite de
+   * alcance deliberado, no un olvido (ver `ProductAttributes`/`ProductEffects`).
+   * Cualquier subconjunto de los tres es valido; el caso de uso exige que
+   * llegue al menos uno.
+   *
+   * DEVUELVE UN AGREGADO NUEVO y la version AVANZA, mismo criterio que
+   * `adjustPrintRun`/`configurePremium`: sin eso, dos ediciones simultaneas
+   * leerian la misma version y la segunda pisaria a la primera en silencio.
+   */
+  updateDetails(
+    details: {
+      readonly name?: ProductName
+      readonly imageUrl?: ProductImageUrl
+      readonly description?: ProductDescription
+    },
+    at: Date,
+  ): CanonicalProduct {
+    return new CanonicalProduct({
+      productId: this.productId,
+      sku: this.sku,
+      name: details.name ?? this.name,
+      imageUrl: details.imageUrl ?? this.imageUrl,
+      description: details.description ?? this.description,
+      type: this.type,
+      attributes: this.attributes,
+      printRun: this.printRun,
+      availableUnits: this.availableUnits,
+      pricing: {
+        creditsPrice: this.creditsPrice,
+        premium: this.premium,
+        realMoneyPrice: this.realMoneyPrice,
+      },
+      lifecycleStatus: this.lifecycleStatus,
+      createdAt: this.createdAt,
+      updatedAt: at,
+      averageRating: this.averageRating,
+      reviewCount: this.reviewCount,
+      hasRealMoneyPurchase: this.hasRealMoneyPurchase,
+      version: this.version + 1,
+    })
+  }
+
   private copyWith(
     printRun: PrintRun,
     availableUnits: number | null,
