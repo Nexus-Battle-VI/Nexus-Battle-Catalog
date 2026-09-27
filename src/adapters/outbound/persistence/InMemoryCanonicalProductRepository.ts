@@ -158,6 +158,7 @@ export class InMemoryCanonicalProductRepository
       .filter((product) => {
         if (product.lifecycleStatus !== 'ACTIVE') return false
         if (query.type !== undefined && product.type !== query.type) return false
+        if (query.premium !== undefined && product.premium !== query.premium) return false
         const price = product.realMoneyPrice
         if (query.currency !== undefined && price?.currency !== query.currency) return false
         if (query.minPrice !== undefined && (price === null || price.amount < query.minPrice))
@@ -187,6 +188,12 @@ export class InMemoryCanonicalProductRepository
     const matching = [...this.byId.values()]
       .filter((product) => {
         if (query.type !== undefined && product.type !== query.type) return false
+        if (
+          query.type === undefined &&
+          query.excludeType !== undefined &&
+          product.type === query.excludeType
+        )
+          return false
         if (
           query.lifecycleStatus !== undefined &&
           product.lifecycleStatus !== query.lifecycleStatus

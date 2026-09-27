@@ -12,6 +12,7 @@ import {
 export interface SearchAdminProductsCommand {
   readonly query?: string
   readonly type?: string
+  readonly excludeType?: string
   readonly lifecycleStatus?: string
   readonly page?: number
 }
@@ -63,6 +64,8 @@ export class SearchAdminProducts {
     const result = await this.products.searchAdminProducts({
       query: command.query,
       type: command.type === undefined ? undefined : parseProductType(command.type),
+      excludeType:
+        command.excludeType === undefined ? undefined : parseProductType(command.excludeType),
       lifecycleStatus: command.lifecycleStatus as LifecycleStatus | undefined,
       page,
     })

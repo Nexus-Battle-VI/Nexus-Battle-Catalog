@@ -170,6 +170,17 @@ export class AdminProductSearchRequest {
   type?: string
 
   @ApiPropertyOptional({
+    enum: PRODUCT_TYPES,
+    description:
+      'Excluye un tipo del listado. Se ignora si `type` tambien viene en la peticion. Pensado para ' +
+      'que la vista por defecto no muestre HABILIDAD -no es un producto vendible por separado, va ' +
+      'empaquetada con su HEROE-, sin impedir que un administrador la busque explicitamente con `type`.',
+  })
+  @IsOptional()
+  @IsIn(PRODUCT_TYPES)
+  excludeType?: string
+
+  @ApiPropertyOptional({
     enum: LIFECYCLE_STATUSES,
     description: 'Sin filtro, incluye productos ACTIVE y SUSPENDED.',
   })
