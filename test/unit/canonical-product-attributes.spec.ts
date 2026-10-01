@@ -17,6 +17,45 @@ const envelope = (values: object): object => ({ schemaVersion: '1', values })
 
 describe('ProductAttributes schemaVersion 1', () => {
   it.each([
+    [ProductType.Weapon, 'ARMA', 1],
+    [ProductType.Armor, 'ARMADURA', 500],
+    [ProductType.Item, 'ITEM', 10000],
+  ] as const)('conserva la tasa de caída de %s en puntos básicos', (type, kind, chance) => {
+    const values = {
+      kind,
+      compatibilityScope: 'ALL_HEROES',
+      effects: [damage()],
+      dropChanceBasisPoints: chance,
+      ...(type === ProductType.Armor ? { slot: 'CHEST' } : {}),
+    }
+    expect(parseProductAttributes(envelope(values), type).values).toMatchObject({
+      dropChanceBasisPoints: chance,
+    })
+  })
+
+  it.each([-1, 10001, 1.5, null, '5'])('rechaza una tasa inválida %s', (chance) => {
+    expect(() =>
+      parseProductAttributes(
+        envelope({
+          kind: 'ARMA',
+          compatibilityScope: 'ALL_HEROES',
+          effects: [damage()],
+          dropChanceBasisPoints: chance,
+        }),
+        ProductType.Weapon,
+      ),
+    ).toThrow(DomainError)
+  })
+
+  it('no inventa tasa para un producto histórico sin campo', () => {
+    const product = parseProductAttributes(
+      envelope({ kind: 'ITEM', compatibilityScope: 'ALL_HEROES', effects: [damage()] }),
+      ProductType.Item,
+    )
+    expect(product.values).not.toHaveProperty('dropChanceBasisPoints')
+  })
+
+  it.each([
     [
       ProductType.Hero,
       {

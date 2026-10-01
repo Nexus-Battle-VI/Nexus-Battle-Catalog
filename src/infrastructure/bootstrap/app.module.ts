@@ -20,6 +20,7 @@ import { InternalProductRatingController } from '../../adapters/inbound/http/int
 import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
 import { AdjustProductInventory } from '../../application/use-cases/AdjustProductInventory'
 import { ConfigureProductPremium } from '../../application/use-cases/ConfigureProductPremium'
+import { ConfigureProductDropChance } from '../../application/use-cases/ConfigureProductDropChance'
 import { UpdateProductLifecycleStatus } from '../../application/use-cases/UpdateProductLifecycleStatus'
 import { GetCanonicalProduct } from '../../application/use-cases/GetCanonicalProduct'
 import { GetOfficialAuctionEligibility } from '../../application/use-cases/GetOfficialAuctionEligibility'
@@ -64,6 +65,7 @@ import {
   LOOKUP_CANONICAL_PRODUCTS,
   ADJUST_PRODUCT_INVENTORY,
   CONFIGURE_PRODUCT_PREMIUM,
+  CONFIGURE_PRODUCT_DROP_CHANCE,
   GET_CANONICAL_PRODUCT,
   GET_OFFICIAL_AUCTION_ELIGIBILITY,
   ACQUIRE_PRODUCT_UNIT,
@@ -514,6 +516,26 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
         outbox: ProductOutboxPort,
       ): ConfigureProductPremium =>
         new ConfigureProductPremium({ products, clock, idGenerator, unitOfWork, audit, outbox }),
+      inject: [
+        CANONICAL_PRODUCT_WRITE,
+        CLOCK,
+        ID_GENERATOR,
+        CANONICAL_PRODUCT_UNIT_OF_WORK,
+        PRODUCT_AUDIT_PORT,
+        PRODUCT_OUTBOX_PORT,
+      ],
+    },
+    {
+      provide: CONFIGURE_PRODUCT_DROP_CHANCE,
+      useFactory: (
+        products: CanonicalProductRepositoryPort,
+        clock: ClockPort,
+        idGenerator: IdGeneratorPort,
+        unitOfWork: CanonicalProductUnitOfWorkPort,
+        audit: ProductAuditPort,
+        outbox: ProductOutboxPort,
+      ): ConfigureProductDropChance =>
+        new ConfigureProductDropChance({ products, clock, idGenerator, unitOfWork, audit, outbox }),
       inject: [
         CANONICAL_PRODUCT_WRITE,
         CLOCK,

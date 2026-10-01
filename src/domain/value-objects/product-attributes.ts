@@ -61,6 +61,8 @@ interface CompatibleAttributes {
   readonly compatibilityScope: CompatibilityScope
   readonly compatibleHeroSubtypes?: readonly string[]
   readonly effects: readonly ProductEffect[]
+  /** HU-30: 100 puntos basicos = 1 %. Ausente en productos historicos sin tasa configurada. */
+  readonly dropChanceBasisPoints?: number
 }
 
 export interface WeaponAttributes extends CompatibleAttributes {
@@ -297,6 +299,7 @@ const parseCompatibility = (record: UnknownObject, path: string): CompatibleAttr
     COMPATIBILITY_SCOPES,
   )
   const rawSubtypes = optionalValue(record, 'compatibleHeroSubtypes')
+  const rawDropChance = optionalValue(record, 'dropChanceBasisPoints')
 
   if (compatibilityScope === CompatibilityScope.AllHeroes && rawSubtypes !== undefined) {
     throw new DomainError(
@@ -319,6 +322,14 @@ const parseCompatibility = (record: UnknownObject, path: string): CompatibleAttr
           ),
         }),
     effects: parseEffects(requiredValue(record, 'effects', path), `${path}.effects`),
+    ...(rawDropChance === undefined
+      ? {}
+      : {
+          dropChanceBasisPoints: parseInteger(rawDropChance, `${path}.dropChanceBasisPoints`, {
+            minimum: 0,
+            maximum: 10000,
+          }),
+        }),
   }
 }
 
@@ -394,11 +405,32 @@ const attributeKeys = (productType: ProductType): readonly string[] => {
     case 'HABILIDAD':
       return ['kind', 'compatibleHeroSubtypes', 'powerCostMode', 'powerCost', 'effects']
     case 'ARMA':
-      return ['kind', 'compatibilityScope', 'compatibleHeroSubtypes', 'effects', 'setCode']
+      return [
+        'kind',
+        'compatibilityScope',
+        'compatibleHeroSubtypes',
+        'effects',
+        'setCode',
+        'dropChanceBasisPoints',
+      ]
     case 'ARMADURA':
-      return ['kind', 'compatibilityScope', 'compatibleHeroSubtypes', 'slot', 'effects', 'setCode']
+      return [
+        'kind',
+        'compatibilityScope',
+        'compatibleHeroSubtypes',
+        'slot',
+        'effects',
+        'setCode',
+        'dropChanceBasisPoints',
+      ]
     case 'ITEM':
-      return ['kind', 'compatibilityScope', 'compatibleHeroSubtypes', 'effects']
+      return [
+        'kind',
+        'compatibilityScope',
+        'compatibleHeroSubtypes',
+        'effects',
+        'dropChanceBasisPoints',
+      ]
     case 'EPICA':
       return ['kind', 'compatibleHeroSubtype', 'generalEffect', 'specificEffect']
   }

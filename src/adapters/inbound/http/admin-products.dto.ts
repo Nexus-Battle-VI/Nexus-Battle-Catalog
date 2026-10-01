@@ -47,6 +47,26 @@ export class AdjustInventoryRequest {
 }
 
 /**
+ * Cuerpo de la configuracion de tasa de caida Versus (HU-30, Task HU-30.1).
+ *
+ * SOLO `dropChanceBasisPoints`. Aplica unicamente a productos ARMA, ARMADURA
+ * o ITEM -el caso de uso rechaza cualquier otro `type` con 422-; 100 puntos
+ * basicos equivalen a 1 %.
+ */
+export class ConfigureDropChanceRequest {
+  @ApiProperty({
+    description: 'Tasa de caida Versus en puntos basicos (0-10000; 100 = 1 %).',
+    minimum: 0,
+    maximum: 10_000,
+    example: 500,
+  })
+  @IsInt()
+  @Min(0)
+  @Max(10_000)
+  dropChanceBasisPoints!: number
+}
+
+/**
  * Cuerpo de la configuracion premium (HU-36, CA-01/CA-02).
  *
  * `@IsBoolean()` y la forma anidada de `realMoneyPrice` son las UNICAS
