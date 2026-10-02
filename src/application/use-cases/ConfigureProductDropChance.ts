@@ -1,7 +1,14 @@
 import { ProductId } from '../../domain/value-objects/canonical-product-values'
-import { asStrictObject, parseInteger, requiredValue } from '../../domain/value-objects/schema-validation'
+import {
+  asStrictObject,
+  parseInteger,
+  requiredValue,
+} from '../../domain/value-objects/schema-validation'
 import { toCanonicalProductDto, type CanonicalProductDto } from '../dto/CanonicalProductDto'
-import { CanonicalProductNotFoundError, OutboxPayloadTooLargeError } from '../errors/ApplicationError'
+import {
+  CanonicalProductNotFoundError,
+  OutboxPayloadTooLargeError,
+} from '../errors/ApplicationError'
 import type { ClockPort } from '../ports/ClockPort'
 import type { IdGeneratorPort } from '../ports/IdGeneratorPort'
 import type { RequestTraceContext } from '../ports/RequestTraceContext'

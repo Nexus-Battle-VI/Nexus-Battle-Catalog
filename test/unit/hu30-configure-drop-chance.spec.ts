@@ -62,7 +62,11 @@ const producto = (
     type,
     attributes: parseProductAttributes(attrs, type),
     printRun: PrintRun.create(1),
-    pricing: ProductPricing.create({ creditsPrice: CreditsPrice.create(0), premium: false, realMoneyPrice: null }),
+    pricing: ProductPricing.create({
+      creditsPrice: CreditsPrice.create(0),
+      premium: false,
+      realMoneyPrice: null,
+    }),
     createdAt: new Date('2026-09-01T00:00:00.000Z'),
   })
 
@@ -124,7 +128,12 @@ describe('HU-30 (Task HU-30.1): tasa de caida Versus de un producto existente', 
       const { uso, products, audit, outbox } = construir()
       await products.create(producto(ProductType.Weapon, ARMA_ATTRS))
 
-      const dto = await uso.execute(ID, { dropChanceBasisPoints: 500 }, { subject: 'admin-1' }, TRACE)
+      const dto = await uso.execute(
+        ID,
+        { dropChanceBasisPoints: 500 },
+        { subject: 'admin-1' },
+        TRACE,
+      )
 
       const values = dto.attributes.values as { dropChanceBasisPoints?: number }
       expect(values.dropChanceBasisPoints).toBe(500)

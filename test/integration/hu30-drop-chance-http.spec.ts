@@ -139,8 +139,8 @@ describe('HU-30 sobre HTTP: PATCH /api/v1/admin/products/{id}/drop-chance', () =
       .send({ dropChanceBasisPoints: 500 })
       .expect(200)
 
-    const values = (respuesta.body as { attributes: { values: Record<string, unknown> } }).attributes
-      .values
+    const values = (respuesta.body as { attributes: { values: Record<string, unknown> } })
+      .attributes.values
     expect(values.dropChanceBasisPoints).toBe(500)
   })
 
@@ -159,8 +159,8 @@ describe('HU-30 sobre HTTP: PATCH /api/v1/admin/products/{id}/drop-chance', () =
       .send({ dropChanceBasisPoints: 900 })
       .expect(200)
 
-    const values = (respuesta.body as { attributes: { values: Record<string, unknown> } }).attributes
-      .values
+    const values = (respuesta.body as { attributes: { values: Record<string, unknown> } })
+      .attributes.values
     expect(values.dropChanceBasisPoints).toBe(900)
   })
 
