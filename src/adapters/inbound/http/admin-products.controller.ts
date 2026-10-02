@@ -28,6 +28,7 @@ import {
 import type { CanonicalProductDto } from '../../../application/dto/CanonicalProductDto'
 import type { AdjustProductInventory } from '../../../application/use-cases/AdjustProductInventory'
 import type { ConfigureProductPremium } from '../../../application/use-cases/ConfigureProductPremium'
+import type { ConfigureProductDropChance } from '../../../application/use-cases/ConfigureProductDropChance'
 import type { GetCanonicalProduct } from '../../../application/use-cases/GetCanonicalProduct'
 import type { UpdateProductLifecycleStatus } from '../../../application/use-cases/UpdateProductLifecycleStatus'
 import type {
@@ -42,6 +43,7 @@ import { resolveCorrelationId } from './correlation-id'
 import {
   ADJUST_PRODUCT_INVENTORY,
   CONFIGURE_PRODUCT_PREMIUM,
+  CONFIGURE_PRODUCT_DROP_CHANCE,
   GET_CANONICAL_PRODUCT,
   SEARCH_ADMIN_PRODUCTS,
   UPDATE_PRODUCT_DETAILS,
@@ -53,6 +55,7 @@ import {
   AdminProductSearchRequest,
   AdminProductSearchResponse,
   CanonicalProductResponse,
+  ConfigureDropChanceRequest,
   ConfigurePremiumRequest,
   UpdateProductDetailsRequest,
   UpdateProductStatusRequest,
@@ -74,6 +77,8 @@ export class AdminProductsController {
     private readonly adjustProductInventory: AdjustProductInventory,
     @Inject(CONFIGURE_PRODUCT_PREMIUM)
     private readonly configureProductPremium: ConfigureProductPremium,
+    @Inject(CONFIGURE_PRODUCT_DROP_CHANCE)
+    private readonly configureProductDropChance: ConfigureProductDropChance,
     @Inject(GET_CANONICAL_PRODUCT)
     private readonly getCanonicalProduct: GetCanonicalProduct,
     @Inject(UPDATE_PRODUCT_LIFECYCLE_STATUS)
@@ -224,6 +229,60 @@ export class AdminProductsController {
 
     try {
       return await this.configureProductPremium.execute(
+        id,
+        body,
+        AdminProductsController.buildActor(identity),
+        trace,
+      )
+    } catch (error: unknown) {
+      throw AdminProductsController.translate(error)
+    }
+  }
+
+  /**
+   * Configura la tasa de caida Versus de un producto ARMA/ARMADURA/ITEM ya
+   * existente (HU-30, Task HU-30.1). Brecha confirmada en auditoria: editar
+   * `attributes` no es posible via `PATCH :id/details` -a proposito-, y sin
+   * esta ruta un producto creado antes de HU-30 nunca podria volver a
+   * equiparse en Versus (Player-Inventory rechaza la instantanea de batalla
+   * con `DROP_RATE_UNAVAILABLE`, y Combat no puede iniciar la partida).
+   */
+  @Patch(':id/drop-chance')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.Administrator)
+  @RequiresMfaEvidence()
+  @ApiOperation({
+    operationId: 'configureCatalogProductDropChanceV1',
+    summary: 'Configura la tasa de caida Versus (HU-30) de un producto equipable',
+  })
+  @ApiParam({ name: 'id', description: 'Identificador del producto canonico' })
+  @ApiResponse({
+    status: 200,
+    description: 'Tasa de caida configurada',
+    type: CanonicalProductResponse,
+  })
+  @ApiResponse({ status: 400, description: 'Cuerpo o campos no declarados invalidos' })
+  @ApiResponse({ status: 401, description: 'Testimonio ausente, invalido o vencido' })
+  @ApiResponse({ status: 403, description: 'Rol no autorizado o segundo factor ausente' })
+  @ApiResponse({ status: 404, description: 'El producto no existe' })
+  @ApiResponse({ status: 409, description: 'Otro ajuste modifico el producto entre medias' })
+  @ApiResponse({
+    status: 422,
+    description: 'El producto no es ARMA, ARMADURA ni ITEM',
+  })
+  @ApiResponse({ status: 503, description: 'No se pudo comprobar el segundo factor' })
+  async configureDropChance(
+    @Param('id') id: string,
+    @Body() body: ConfigureDropChanceRequest,
+    @CurrentIdentity() identity: VerifiedIdentity,
+    @Headers('x-correlation-id') rawCorrelationId: string | string[] | undefined,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<CanonicalProductDto> {
+    const trace: RequestTraceContext = { correlationId: resolveCorrelationId(rawCorrelationId) }
+    response.setHeader('x-correlation-id', trace.correlationId)
+
+    try {
+      return await this.configureProductDropChance.execute(
         id,
         body,
         AdminProductsController.buildActor(identity),
