@@ -159,8 +159,20 @@ describe('ProductAttributes schemaVersion 1', () => {
         kind: 'EPICA',
         compatibleHeroSubtype: 'GUERRERO_TANQUE',
         specificEffects: [
-          { kind: 'STAT_MODIFIER', target: 'SELF', statistic: 'DAMAGE', operation: 'INCREASE', magnitude: fixed(4) },
-          { kind: 'STAT_MODIFIER', target: 'SELF', statistic: 'CRITICAL_CHANCE', operation: 'INCREASE', magnitude: { mode: 'PERCENTAGE', basisPoints: 200 } },
+          {
+            kind: 'STAT_MODIFIER',
+            target: 'SELF',
+            statistic: 'DAMAGE',
+            operation: 'INCREASE',
+            magnitude: fixed(4),
+          },
+          {
+            kind: 'STAT_MODIFIER',
+            target: 'SELF',
+            statistic: 'CRITICAL_CHANCE',
+            operation: 'INCREASE',
+            magnitude: { mode: 'PERCENTAGE', basisPoints: 200 },
+          },
         ],
       }),
       ProductType.Epic,
