@@ -228,6 +228,11 @@ const parsePersistedAttributes = (
     if (values.generalEffect !== undefined) {
       values.generalEffect = withoutDerivedStackable(values.generalEffect, productId)
     }
+    if (Array.isArray(values.specificEffects)) {
+      values.specificEffects = values.specificEffects.map((effect) =>
+        withoutDerivedStackable(effect, productId),
+      )
+    }
     if (values.specificEffect !== undefined) {
       values.specificEffect = withoutDerivedStackable(values.specificEffect, productId)
     }

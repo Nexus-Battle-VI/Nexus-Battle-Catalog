@@ -153,6 +153,37 @@ describe('ProductAttributes schemaVersion 1', () => {
     expect(epic.values).toMatchObject({ powerCost: 0, cooldownTurns: 2 })
   })
 
+  it('EPICA acepta varios efectos especificos simultaneos (GAP-HU31-CATALOG-MULTI-EFFECT)', () => {
+    const epic = parseProductAttributes(
+      envelope({
+        kind: 'EPICA',
+        compatibleHeroSubtype: 'GUERRERO_TANQUE',
+        specificEffects: [
+          { kind: 'STAT_MODIFIER', target: 'SELF', statistic: 'DAMAGE', operation: 'INCREASE', magnitude: fixed(4) },
+          { kind: 'STAT_MODIFIER', target: 'SELF', statistic: 'CRITICAL_CHANCE', operation: 'INCREASE', magnitude: { mode: 'PERCENTAGE', basisPoints: 200 } },
+        ],
+      }),
+      ProductType.Epic,
+    )
+
+    expect(epic.values.kind === ProductType.Epic && epic.values.specificEffects).toHaveLength(2)
+  })
+
+  it('EPICA normaliza la forma legada specificEffect (un objeto) a una lista de un elemento', () => {
+    const epic = parseProductAttributes(
+      envelope({
+        kind: 'EPICA',
+        compatibleHeroSubtype: 'MEDICO',
+        specificEffect: { kind: 'HEALING', target: 'ALLY', magnitude: fixed(8) },
+      }),
+      ProductType.Epic,
+    )
+
+    expect(epic.values.kind === ProductType.Epic && epic.values.specificEffects).toEqual([
+      { kind: 'HEALING', target: 'ALLY', magnitude: fixed(8), stackable: false },
+    ])
+  })
+
   it.each([
     ['version de esquema desconocida', { schemaVersion: '2', values: {} }, ProductType.Item],
     [
@@ -304,6 +335,21 @@ describe('ProductAttributes schemaVersion 1', () => {
     [
       'EPICA sin efecto especifico',
       envelope({ kind: 'EPICA', compatibleHeroSubtype: 'MEDICO' }),
+      ProductType.Epic,
+    ],
+    [
+      'EPICA con specificEffects vacio',
+      envelope({ kind: 'EPICA', compatibleHeroSubtype: 'MEDICO', specificEffects: [] }),
+      ProductType.Epic,
+    ],
+    [
+      'EPICA con specificEffects y specificEffect (legado) a la vez',
+      envelope({
+        kind: 'EPICA',
+        compatibleHeroSubtype: 'MEDICO',
+        specificEffects: [{ kind: 'HEALING', target: 'ALLY', magnitude: fixed(8) }],
+        specificEffect: { kind: 'HEALING', target: 'ALLY', magnitude: fixed(8) },
+      }),
       ProductType.Epic,
     ],
   ] as const)('rechaza %s', (_case, attributes, type) => {
