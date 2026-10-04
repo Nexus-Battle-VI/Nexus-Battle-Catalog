@@ -40,10 +40,16 @@ import {
   toCanonicalSnapshot,
   type CanonicalProductDocument,
 } from './canonical-mapping'
+import type { CombatBotCandidatesQueryPort } from '../../../application/ports/CombatBotCandidatesQueryPort'
+import { ProductType as ProductTypes } from '../../../domain/value-objects/canonical-product-values'
 
 /** Escritura canónica aditiva sobre la misma colección que conserva el legado. */
 export class MongoCanonicalProductRepository
-  implements CanonicalProductRepositoryPort, CatalogStorefrontPort, AdminProductSearchPort
+  implements
+    CanonicalProductRepositoryPort,
+    CatalogStorefrontPort,
+    AdminProductSearchPort,
+    CombatBotCandidatesQueryPort
 {
   private readonly products: Collection<CanonicalProductDocument>
 
@@ -111,6 +117,18 @@ export class MongoCanonicalProductRepository
     })
 
     return document === null ? null : toCanonicalProduct(document)
+  }
+
+  async listActiveGameplayDefinitions(): Promise<readonly CanonicalProduct[]> {
+    const documents = await this.products
+      .find({
+        lifecycleStatus: 'ACTIVE',
+        type: { $in: Object.values(ProductTypes) },
+      })
+      .sort({ _id: 1 })
+      .toArray()
+
+    return documents.map(toCanonicalProduct)
   }
 
   /**

@@ -17,6 +17,7 @@ import { InternalProductPremiumStatusController } from '../../adapters/inbound/h
 import { InternalOfficialAuctionEligibilityController } from '../../adapters/inbound/http/internal-official-auction-eligibility.controller'
 import { InternalProductPremiumPurchaseController } from '../../adapters/inbound/http/internal-product-premium-purchase.controller'
 import { InternalProductRatingController } from '../../adapters/inbound/http/internal-product-rating.controller'
+import { InternalCombatBotCandidatesController } from '../../adapters/inbound/http/internal-combat-bot-candidates.controller'
 import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
 import { AdjustProductInventory } from '../../application/use-cases/AdjustProductInventory'
 import { ConfigureProductPremium } from '../../application/use-cases/ConfigureProductPremium'
@@ -63,6 +64,7 @@ import {
   CREATE_CANONICAL_PRODUCT,
   GET_CANONICAL_PRODUCT_BY_REFERENCE,
   LOOKUP_CANONICAL_PRODUCTS,
+  LIST_COMBAT_BOT_CANDIDATES,
   ADJUST_PRODUCT_INVENTORY,
   CONFIGURE_PRODUCT_PREMIUM,
   CONFIGURE_PRODUCT_DROP_CHANCE,
@@ -96,6 +98,7 @@ import {
   GetCanonicalProductByReference,
   LookupCanonicalProducts,
 } from '../../application/use-cases/CanonicalProductQueries'
+import { ListCombatBotCandidates } from '../../application/use-cases/ListCombatBotCandidates'
 import { CreateProductAssetUploadIntent } from '../../application/use-cases/CreateProductAssetUploadIntent'
 import { FinalizeProductAsset } from '../../application/use-cases/FinalizeProductAsset'
 import { GetProductAssetContent } from '../../application/use-cases/GetProductAssetContent'
@@ -159,6 +162,10 @@ import {
   type ProductAuditPort,
   type ProductOutboxPort,
 } from '../../application/ports/CanonicalProductPorts'
+import {
+  COMBAT_BOT_CANDIDATES_QUERY,
+  type CombatBotCandidatesQueryPort,
+} from '../../application/ports/CombatBotCandidatesQueryPort'
 import type { IdGeneratorPort } from '../../application/ports/IdGeneratorPort'
 import type { ReadinessCheck, VersionReport } from '../health/health'
 
@@ -187,6 +194,7 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
     InternalOfficialAuctionEligibilityController,
     InternalProductPremiumPurchaseController,
     InternalProductRatingController,
+    InternalCombatBotCandidatesController,
     InternalStockReservationsController,
     AdminProductAssetsController,
     CatalogProductAssetsController,
@@ -336,6 +344,7 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
     { provide: CANONICAL_PRODUCT_WRITE, useExisting: CANONICAL_PRODUCT_REPOSITORY },
     { provide: PRODUCT_REFERENCE_QUERY, useExisting: CANONICAL_PRODUCT_REPOSITORY },
     { provide: CANONICAL_PRODUCT_READ, useExisting: CANONICAL_PRODUCT_REPOSITORY },
+    { provide: COMBAT_BOT_CANDIDATES_QUERY, useExisting: CANONICAL_PRODUCT_REPOSITORY },
     { provide: HERO_SUBTYPE_REGISTRY, useFactory: () => new HeroSubtypeRegistryV1() },
     { provide: ID_GENERATOR, useFactory: (): IdGeneratorPort => new UuidGenerator() },
     {
@@ -691,6 +700,12 @@ const OUTBOX_DISPATCHER_WORKER = Symbol('OutboxDispatcherWorker')
       useFactory: (products: CanonicalProductReadPort): LookupCanonicalProducts =>
         new LookupCanonicalProducts(products),
       inject: [CANONICAL_PRODUCT_READ],
+    },
+    {
+      provide: LIST_COMBAT_BOT_CANDIDATES,
+      useFactory: (products: CombatBotCandidatesQueryPort): ListCombatBotCandidates =>
+        new ListCombatBotCandidates(products),
+      inject: [COMBAT_BOT_CANDIDATES_QUERY],
     },
     {
       provide: PRODUCT_ASSET_REPOSITORY_PORT,
