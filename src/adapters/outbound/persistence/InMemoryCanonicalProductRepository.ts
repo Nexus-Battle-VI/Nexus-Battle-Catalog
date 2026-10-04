@@ -26,6 +26,8 @@ import {
 import { storefrontMatches } from '../../../domain/services/storefront-search'
 import type { StockReservationLine } from '../../../application/ports/StockReservationPort'
 import { StockReservationRejectedError } from '../../../application/use-cases/StockReservations'
+import type { CombatBotCandidatesQueryPort } from '../../../application/ports/CombatBotCandidatesQueryPort'
+import { ProductType as ProductTypes } from '../../../domain/value-objects/canonical-product-values'
 
 /**
  * Almacén canónico en proceso para desarrollo y pruebas HTTP.
@@ -34,7 +36,11 @@ import { StockReservationRejectedError } from '../../../application/use-cases/St
  * un comportamiento distinto al cambiar de driver.
  */
 export class InMemoryCanonicalProductRepository
-  implements CanonicalProductRepositoryPort, CatalogStorefrontPort, AdminProductSearchPort
+  implements
+    CanonicalProductRepositoryPort,
+    CatalogStorefrontPort,
+    AdminProductSearchPort,
+    CombatBotCandidatesQueryPort
 {
   private readonly byId = new Map<string, CanonicalProduct>()
   private readonly bySku = new Map<string, string>()
@@ -149,6 +155,18 @@ export class InMemoryCanonicalProductRepository
 
   findById(productId: ProductId): Promise<CanonicalProduct | null> {
     return Promise.resolve(this.byId.get(productId.value) ?? null)
+  }
+
+  listActiveGameplayDefinitions(): Promise<readonly CanonicalProduct[]> {
+    const gameplayTypes: readonly ProductType[] = Object.values(ProductTypes)
+
+    return Promise.resolve(
+      [...this.byId.values()]
+        .filter(
+          (product) => product.lifecycleStatus === 'ACTIVE' && gameplayTypes.includes(product.type),
+        )
+        .sort((left, right) => left.productId.value.localeCompare(right.productId.value)),
+    )
   }
 
   listStorefront(

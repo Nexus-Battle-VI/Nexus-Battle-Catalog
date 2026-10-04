@@ -211,6 +211,41 @@ describe('MongoCanonicalProductRepository', () => {
     ).resolves.toBeNull()
   })
 
+  it('lee en una consulta las definiciones gameplay ACTIVE y las ordena explícitamente', async () => {
+    const active = ATTRIBUTE_FIXTURES.map(([type, values], index) =>
+      buildProduct(type, values, {
+        productId: `20000000-0000-4000-8000-${String(20 - index).padStart(12, '0')}`,
+        sku: `gameplay-${String(index)}`,
+      }),
+    )
+    for (const product of active) await repository.create(product)
+
+    const suspended = buildProduct(...ATTRIBUTE_FIXTURES[2], {
+      productId: '20000000-0000-4000-8000-000000000099',
+      sku: 'gameplay-suspended',
+    })
+    await products().insertOne({
+      ...toCanonicalDocument(suspended),
+      lifecycleStatus: 'SUSPENDED',
+    })
+    await new MongoProductRepository(db).create(
+      Product.draft({
+        sku: Sku.create('legacy-gameplay'),
+        name: ProductName.create('Legacy gameplay'),
+        category: Category.create('armas'),
+        price: Money.create(100, 'COP'),
+      }),
+    )
+
+    const found = await repository.listActiveGameplayDefinitions()
+
+    expect(found).toHaveLength(6)
+    expect(found.map((product) => product.productId.value)).toEqual(
+      active.map((product) => product.productId.value).sort(),
+    )
+    expect(found.every((product) => product.lifecycleStatus === 'ACTIVE')).toBe(true)
+  })
+
   it('consulta unicidad solo para nombre normalizado, tipo y estado activo', async () => {
     const product = buildProduct(...ATTRIBUTE_FIXTURES[2])
     await repository.create(product)
