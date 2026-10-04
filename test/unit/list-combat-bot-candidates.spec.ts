@@ -124,6 +124,9 @@ describe('ListCombatBotCandidates', () => {
       combatProductId(32),
       combatProductId(33),
     ])
+    expect(result.abilities[0]).toMatchObject({
+      name: 'Producto comercial secreto 11',
+    })
     expect(result.equipment.map((entry) => entry.productId)).toEqual([
       combatProductId(41),
       combatProductId(42),
@@ -157,6 +160,7 @@ describe('ListCombatBotCandidates', () => {
     })
     expect(result.equipment[1]).toMatchObject({ type: 'ARMADURA', slot: 'CHEST' })
     expect(result.epics[0]).toMatchObject({
+      name: 'Producto comercial secreto 50',
       compatibleHeroSubtype: 'CHAMAN',
       powerCost: 0,
       cooldownTurns: 2,
@@ -165,7 +169,6 @@ describe('ListCombatBotCandidates', () => {
 
     const serialized = JSON.stringify(result)
     for (const forbidden of [
-      'name',
       'description',
       'imageUrl',
       'creditsPrice',
@@ -182,6 +185,8 @@ describe('ListCombatBotCandidates', () => {
     ]) {
       expect(serialized).not.toContain(`"${forbidden}"`)
     }
+    expect(result.heroes.every((entry) => !('name' in entry))).toBe(true)
+    expect(result.equipment.every((entry) => !('name' in entry))).toBe(true)
   })
 
   it('devuelve colecciones vacías para un catálogo ACTIVE vacío', async () => {

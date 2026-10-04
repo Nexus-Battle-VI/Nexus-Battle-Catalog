@@ -109,6 +109,14 @@ describe('GET /api/internal/v1/catalog/combat/bot-candidates', () => {
         effects: [damageEffect(2)],
       }),
     )
+    await products.create(
+      combatCatalogProduct(30, ProductType.Epic, {
+        kind: 'EPICA',
+        compatibleHeroSubtype: 'GUERRERO_ARMAS',
+        generalEffect: damageEffect(4),
+        specificEffects: [damageEffect(6)],
+      }),
+    )
   })
 
   afterAll(async () => app.close())
@@ -134,6 +142,7 @@ describe('GET /api/internal/v1/catalog/combat/bot-candidates', () => {
       abilities: [1, 2, 3].map((sequence) => ({
         productId: combatProductId(sequence),
         sku: `combat-${String(sequence).padStart(3, '0')}`,
+        name: `Producto comercial secreto ${String(sequence)}`,
         compatibleHeroSubtypes: ['GUERRERO_ARMAS'],
         powerCostMode: 'FIXED',
         powerCost: sequence,
@@ -163,7 +172,30 @@ describe('GET /api/internal/v1/catalog/combat/bot-candidates', () => {
           ],
         },
       ],
-      epics: [],
+      epics: [
+        {
+          productId: combatProductId(30),
+          sku: 'combat-030',
+          name: 'Producto comercial secreto 30',
+          compatibleHeroSubtype: 'GUERRERO_ARMAS',
+          generalEffect: {
+            kind: 'DAMAGE',
+            target: 'OPPONENT',
+            magnitude: { mode: 'FIXED', amount: 4 },
+            stackable: false,
+          },
+          specificEffects: [
+            {
+              kind: 'DAMAGE',
+              target: 'OPPONENT',
+              magnitude: { mode: 'FIXED', amount: 6 },
+              stackable: false,
+            },
+          ],
+          powerCost: 0,
+          cooldownTurns: 2,
+        },
+      ],
     })
   })
 

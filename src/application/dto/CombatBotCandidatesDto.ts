@@ -17,6 +17,7 @@ export interface CombatHeroDefinition {
 export interface CombatAbilityDefinition {
   readonly productId: string
   readonly sku: string
+  readonly name: string
   readonly compatibleHeroSubtypes: readonly string[]
   readonly powerCostMode: 'FIXED' | 'ALL_AVAILABLE'
   readonly powerCost?: number
@@ -38,6 +39,7 @@ export interface CombatEquipmentDefinition {
 export interface CombatEpicDefinition {
   readonly productId: string
   readonly sku: string
+  readonly name: string
   readonly compatibleHeroSubtype: string
   readonly generalEffect?: ProductEffect
   readonly specificEffects: readonly ProductEffect[]

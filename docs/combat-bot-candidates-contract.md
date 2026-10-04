@@ -85,7 +85,8 @@ En particular, un soporte no recibe ataque o daño artificial.
 `abilities` es la unión de las habilidades referenciadas por los héroes ACTIVE;
 no se devuelven habilidades huérfanas. Cada definición contiene:
 
-- `productId` y `sku`;
+- `productId`, `sku` y el `name` autoritativo que Combat congela en
+  `CombatAbility`;
 - `compatibleHeroSubtypes`;
 - `powerCostMode` y `powerCost` cuando el modo es `FIXED`;
 - `chargeTurns`;
@@ -113,7 +114,8 @@ en una regla de obligatoriedad del loadout.
 
 Cada épica ACTIVE contiene:
 
-- `productId` y `sku`;
+- `productId`, `sku` y el `name` autoritativo que Combat congela en
+  `CombatEpic`;
 - `compatibleHeroSubtype`;
 - `generalEffect` cuando exista;
 - `specificEffects`;
@@ -128,9 +130,11 @@ aplique RNG reproducible sobre una lista estable.
 
 ## Campos excluidos
 
-La proyección es una lista blanca. No expone:
+La proyección es una lista blanca. `name` se incluye únicamente en habilidades
+y épicas porque forma parte del snapshot gameplay requerido por Combat; no se
+expone para héroes ni equipamiento. El contrato tampoco expone:
 
-- `name`, `description` ni `imageUrl`;
+- `description` ni `imageUrl`;
 - `creditsPrice`, `realMoneyPrice` ni `premium`;
 - `printRun`, `printRunMode` ni `availableUnits`;
 - `averageRating`, `reviewCount` ni compras/ventas;

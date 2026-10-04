@@ -106,6 +106,7 @@ const toAbility = (product: CanonicalProduct): CombatAbilityDefinition => {
   return {
     productId: product.productId.value,
     sku: product.sku.value,
+    name: product.name.value,
     compatibleHeroSubtypes: [...values.compatibleHeroSubtypes],
     powerCostMode: values.powerCostMode,
     ...(values.powerCost === undefined ? {} : { powerCost: values.powerCost }),
@@ -145,6 +146,7 @@ const toEpic = (product: CanonicalProduct): CombatEpicDefinition => {
   return {
     productId: product.productId.value,
     sku: product.sku.value,
+    name: product.name.value,
     compatibleHeroSubtype: values.compatibleHeroSubtype,
     ...(values.generalEffect === undefined ? {} : { generalEffect: values.generalEffect }),
     specificEffects: values.specificEffects,
