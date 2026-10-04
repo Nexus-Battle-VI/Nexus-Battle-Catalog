@@ -43,6 +43,10 @@ Respuestas de seguridad:
   caller distinto de `combat`;
 - `503 Service Unavailable`: `INTERNAL_SERVICE_AUTH_SECRET` no está configurado.
 
+Para una petición autorizada, `500 Internal Server Error` indica que el catálogo
+ACTIVE contiene referencias gameplay faltantes, inactivas o incompatibles y la
+proyección completa se rechazó para no entregar un dataset inconsistente.
+
 ## Schema v1
 
 La respuesta declara `schemaVersion: "1"`. Este valor versiona el contrato de

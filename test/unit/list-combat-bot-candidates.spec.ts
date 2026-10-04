@@ -10,13 +10,17 @@ import {
   healingEffect,
 } from '../support/combat-bot-candidates-fixtures'
 
-const ability = (sequence: number, subtype: string) =>
+const ability = (
+  sequence: number,
+  subtype: string,
+  effects: readonly object[] = [damageEffect(sequence)],
+) =>
   combatCatalogProduct(sequence, ProductType.Ability, {
     kind: 'HABILIDAD',
     compatibleHeroSubtypes: [subtype],
     powerCostMode: 'FIXED',
     powerCost: 2,
-    effects: [damageEffect(sequence)],
+    effects,
   })
 
 describe('ListCombatBotCandidates', () => {
@@ -36,7 +40,9 @@ describe('ListCombatBotCandidates', () => {
       baseDamage: { mode: 'DICE', count: 2, sides: 6 },
       abilities: abilities.map((entry) => entry.productId.value),
     })
-    const supportAbilities = [ability(31, 'CHAMAN'), ability(32, 'CHAMAN'), ability(33, 'CHAMAN')]
+    const supportAbilities = [31, 32, 33].map((sequence) =>
+      ability(sequence, 'CHAMAN', [healingEffect(sequence)]),
+    )
     const support = combatCatalogProduct(10, ProductType.Hero, {
       kind: 'HEROE',
       heroSubtype: 'CHAMAN',
