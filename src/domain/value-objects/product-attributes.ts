@@ -61,6 +61,8 @@ interface CompatibleAttributes {
   readonly compatibilityScope: CompatibilityScope
   readonly compatibleHeroSubtypes?: readonly string[]
   readonly effects: readonly ProductEffect[]
+  /** HU-30: 100 puntos basicos = 1 %. Ausente en productos historicos sin tasa configurada. */
+  readonly dropChanceBasisPoints?: number
 }
 
 export interface WeaponAttributes extends CompatibleAttributes {
@@ -82,7 +84,15 @@ export interface EpicAttributes {
   readonly kind: 'EPICA'
   readonly compatibleHeroSubtype: string
   readonly generalEffect?: ProductEffect
-  readonly specificEffect: ProductEffect
+  /**
+   * Minimo 1 efecto. Tabla 20 (SRS) confirma epicas oficiales con mas de un
+   * efecto especifico simultaneo (ej. +4 daño Y +2% critico) -- la forma
+   * previa de un unico objeto no las representaba con fidelidad
+   * (GAP-HU31-CATALOG-MULTI-EFFECT). `parseEpicAttributes` tambien acepta,
+   * por compatibilidad retroactiva, la forma legada `specificEffect` (un
+   * unico objeto) y la normaliza aqui a una lista de un elemento.
+   */
+  readonly specificEffects: readonly ProductEffect[]
   readonly powerCost: 0
   readonly cooldownTurns: 2
 }
@@ -281,13 +291,43 @@ const parseEpicAttributes = (record: UnknownObject): EpicAttributes => {
     ...(generalEffect === undefined
       ? {}
       : { generalEffect: parseProductEffect(generalEffect, `${path}.generalEffect`) }),
-    specificEffect: parseProductEffect(
-      requiredValue(record, 'specificEffect', path),
-      `${path}.specificEffect`,
-    ),
+    specificEffects: parseEpicSpecificEffects(record, path),
     powerCost: 0,
     cooldownTurns: 2,
   }
+}
+
+/**
+ * Acepta la forma canonica `specificEffects` (lista, minimo 1) o, por
+ * compatibilidad retroactiva, la forma legada `specificEffect` (un unico
+ * objeto), normalizada aqui a una lista de un elemento. Las dos claves a la
+ * vez describen un documento hibrido: se rechazan explicitamente en vez de
+ * combinarlas o priorizar una en silencio.
+ */
+const parseEpicSpecificEffects = (
+  record: UnknownObject,
+  path: string,
+): readonly ProductEffect[] => {
+  const list = optionalValue(record, 'specificEffects')
+  const legacy = optionalValue(record, 'specificEffect')
+
+  if (list !== undefined && legacy !== undefined) {
+    throw new DomainError(
+      `${path} no puede declarar specificEffects y specificEffect (forma legada) a la vez.`,
+    )
+  }
+
+  if (list !== undefined) {
+    return parseArray(list, `${path}.specificEffects`, 1).map((effect, index) =>
+      parseProductEffect(effect, `${path}.specificEffects[${String(index)}]`),
+    )
+  }
+
+  if (legacy !== undefined) {
+    return [parseProductEffect(legacy, `${path}.specificEffect`)]
+  }
+
+  throw new DomainError(`${path} debe declarar specificEffects (minimo 1 efecto).`)
 }
 
 const parseCompatibility = (record: UnknownObject, path: string): CompatibleAttributes => {
@@ -297,6 +337,7 @@ const parseCompatibility = (record: UnknownObject, path: string): CompatibleAttr
     COMPATIBILITY_SCOPES,
   )
   const rawSubtypes = optionalValue(record, 'compatibleHeroSubtypes')
+  const rawDropChance = optionalValue(record, 'dropChanceBasisPoints')
 
   if (compatibilityScope === CompatibilityScope.AllHeroes && rawSubtypes !== undefined) {
     throw new DomainError(
@@ -319,6 +360,14 @@ const parseCompatibility = (record: UnknownObject, path: string): CompatibleAttr
           ),
         }),
     effects: parseEffects(requiredValue(record, 'effects', path), `${path}.effects`),
+    ...(rawDropChance === undefined
+      ? {}
+      : {
+          dropChanceBasisPoints: parseInteger(rawDropChance, `${path}.dropChanceBasisPoints`, {
+            minimum: 0,
+            maximum: 10000,
+          }),
+        }),
   }
 }
 
@@ -394,12 +443,33 @@ const attributeKeys = (productType: ProductType): readonly string[] => {
     case 'HABILIDAD':
       return ['kind', 'compatibleHeroSubtypes', 'powerCostMode', 'powerCost', 'effects']
     case 'ARMA':
-      return ['kind', 'compatibilityScope', 'compatibleHeroSubtypes', 'effects', 'setCode']
+      return [
+        'kind',
+        'compatibilityScope',
+        'compatibleHeroSubtypes',
+        'effects',
+        'setCode',
+        'dropChanceBasisPoints',
+      ]
     case 'ARMADURA':
-      return ['kind', 'compatibilityScope', 'compatibleHeroSubtypes', 'slot', 'effects', 'setCode']
+      return [
+        'kind',
+        'compatibilityScope',
+        'compatibleHeroSubtypes',
+        'slot',
+        'effects',
+        'setCode',
+        'dropChanceBasisPoints',
+      ]
     case 'ITEM':
-      return ['kind', 'compatibilityScope', 'compatibleHeroSubtypes', 'effects']
+      return [
+        'kind',
+        'compatibilityScope',
+        'compatibleHeroSubtypes',
+        'effects',
+        'dropChanceBasisPoints',
+      ]
     case 'EPICA':
-      return ['kind', 'compatibleHeroSubtype', 'generalEffect', 'specificEffect']
+      return ['kind', 'compatibleHeroSubtype', 'generalEffect', 'specificEffect', 'specificEffects']
   }
 }

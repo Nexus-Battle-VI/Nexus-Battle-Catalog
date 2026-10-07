@@ -17,6 +17,45 @@ const envelope = (values: object): object => ({ schemaVersion: '1', values })
 
 describe('ProductAttributes schemaVersion 1', () => {
   it.each([
+    [ProductType.Weapon, 'ARMA', 1],
+    [ProductType.Armor, 'ARMADURA', 500],
+    [ProductType.Item, 'ITEM', 10000],
+  ] as const)('conserva la tasa de caída de %s en puntos básicos', (type, kind, chance) => {
+    const values = {
+      kind,
+      compatibilityScope: 'ALL_HEROES',
+      effects: [damage()],
+      dropChanceBasisPoints: chance,
+      ...(type === ProductType.Armor ? { slot: 'CHEST' } : {}),
+    }
+    expect(parseProductAttributes(envelope(values), type).values).toMatchObject({
+      dropChanceBasisPoints: chance,
+    })
+  })
+
+  it.each([-1, 10001, 1.5, null, '5'])('rechaza una tasa inválida %s', (chance) => {
+    expect(() =>
+      parseProductAttributes(
+        envelope({
+          kind: 'ARMA',
+          compatibilityScope: 'ALL_HEROES',
+          effects: [damage()],
+          dropChanceBasisPoints: chance,
+        }),
+        ProductType.Weapon,
+      ),
+    ).toThrow(DomainError)
+  })
+
+  it('no inventa tasa para un producto histórico sin campo', () => {
+    const product = parseProductAttributes(
+      envelope({ kind: 'ITEM', compatibilityScope: 'ALL_HEROES', effects: [damage()] }),
+      ProductType.Item,
+    )
+    expect(product.values).not.toHaveProperty('dropChanceBasisPoints')
+  })
+
+  it.each([
     [
       ProductType.Hero,
       {
@@ -112,6 +151,49 @@ describe('ProductAttributes schemaVersion 1', () => {
       stackable: false,
     })
     expect(epic.values).toMatchObject({ powerCost: 0, cooldownTurns: 2 })
+  })
+
+  it('EPICA acepta varios efectos especificos simultaneos (GAP-HU31-CATALOG-MULTI-EFFECT)', () => {
+    const epic = parseProductAttributes(
+      envelope({
+        kind: 'EPICA',
+        compatibleHeroSubtype: 'GUERRERO_TANQUE',
+        specificEffects: [
+          {
+            kind: 'STAT_MODIFIER',
+            target: 'SELF',
+            statistic: 'DAMAGE',
+            operation: 'INCREASE',
+            magnitude: fixed(4),
+          },
+          {
+            kind: 'STAT_MODIFIER',
+            target: 'SELF',
+            statistic: 'CRITICAL_CHANCE',
+            operation: 'INCREASE',
+            magnitude: { mode: 'PERCENTAGE', basisPoints: 200 },
+          },
+        ],
+      }),
+      ProductType.Epic,
+    )
+
+    expect(epic.values.kind === ProductType.Epic && epic.values.specificEffects).toHaveLength(2)
+  })
+
+  it('EPICA normaliza la forma legada specificEffect (un objeto) a una lista de un elemento', () => {
+    const epic = parseProductAttributes(
+      envelope({
+        kind: 'EPICA',
+        compatibleHeroSubtype: 'MEDICO',
+        specificEffect: { kind: 'HEALING', target: 'ALLY', magnitude: fixed(8) },
+      }),
+      ProductType.Epic,
+    )
+
+    expect(epic.values.kind === ProductType.Epic && epic.values.specificEffects).toEqual([
+      { kind: 'HEALING', target: 'ALLY', magnitude: fixed(8), stackable: false },
+    ])
   })
 
   it.each([
@@ -265,6 +347,21 @@ describe('ProductAttributes schemaVersion 1', () => {
     [
       'EPICA sin efecto especifico',
       envelope({ kind: 'EPICA', compatibleHeroSubtype: 'MEDICO' }),
+      ProductType.Epic,
+    ],
+    [
+      'EPICA con specificEffects vacio',
+      envelope({ kind: 'EPICA', compatibleHeroSubtype: 'MEDICO', specificEffects: [] }),
+      ProductType.Epic,
+    ],
+    [
+      'EPICA con specificEffects y specificEffect (legado) a la vez',
+      envelope({
+        kind: 'EPICA',
+        compatibleHeroSubtype: 'MEDICO',
+        specificEffects: [{ kind: 'HEALING', target: 'ALLY', magnitude: fixed(8) }],
+        specificEffect: { kind: 'HEALING', target: 'ALLY', magnitude: fixed(8) },
+      }),
       ProductType.Epic,
     ],
   ] as const)('rechaza %s', (_case, attributes, type) => {

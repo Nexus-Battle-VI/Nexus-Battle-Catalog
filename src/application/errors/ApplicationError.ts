@@ -58,6 +58,14 @@ export class InvalidAbilityReferenceError extends Error {
   }
 }
 
+/** El conjunto ACTIVE no puede proyectarse sin ocultar una referencia rota. */
+export class CombatBotCatalogInconsistencyError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'CombatBotCatalogInconsistencyError'
+  }
+}
+
 export class CanonicalProductConcurrencyConflictError extends Error {
   constructor(productId: string, version: number) {
     super(

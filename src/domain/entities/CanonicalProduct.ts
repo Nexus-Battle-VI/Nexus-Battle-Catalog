@@ -395,6 +395,62 @@ export class CanonicalProduct {
     })
   }
 
+  /**
+   * Configura la tasa de caida Versus de un producto equipable ya existente
+   * (HU-30, Task HU-30.1: brecha confirmada tras auditar -`updateDetails`
+   * declara `attributes` no editable a proposito, y ningun otro contrato
+   * reutilizable existia para fijarla sobre un producto creado antes de
+   * HU-30). SOLO `dropChanceBasisPoints`: el resto de `attributes` -efectos,
+   * compatibilidad, slot- permanece exactamente igual, mismo limite de
+   * alcance que `updateDetails` aplica a nombre/imagen/descripcion.
+   *
+   * Sin tasa configurada, `CaptureBattleDropSnapshot` de Player-Inventory
+   * rechaza la instantanea de batalla con `DROP_RATE_UNAVAILABLE`: este
+   * metodo es la unica via para que un producto ARMA/ARMADURA/ITEM creado
+   * antes de HU-30 vuelva a ser equipable en Versus sin bloquear el inicio de
+   * la partida.
+   */
+  configureDropChance(dropChanceBasisPoints: number, at: Date): CanonicalProduct {
+    const values = this.attributes.values
+    if (values.kind !== 'ARMA' && values.kind !== 'ARMADURA' && values.kind !== 'ITEM') {
+      throw new DomainError(
+        `Solo productos ARMA, ARMADURA o ITEM tienen tasa de caida Versus. Se recibio ${this.type}.`,
+      )
+    }
+
+    if (
+      !Number.isInteger(dropChanceBasisPoints) ||
+      dropChanceBasisPoints < 0 ||
+      dropChanceBasisPoints > 10_000
+    ) {
+      throw new DomainError('dropChanceBasisPoints debe ser un entero entre 0 y 10000.')
+    }
+
+    return new CanonicalProduct({
+      productId: this.productId,
+      sku: this.sku,
+      name: this.name,
+      imageUrl: this.imageUrl,
+      description: this.description,
+      type: this.type,
+      attributes: { ...this.attributes, values: { ...values, dropChanceBasisPoints } },
+      printRun: this.printRun,
+      availableUnits: this.availableUnits,
+      pricing: {
+        creditsPrice: this.creditsPrice,
+        premium: this.premium,
+        realMoneyPrice: this.realMoneyPrice,
+      },
+      lifecycleStatus: this.lifecycleStatus,
+      createdAt: this.createdAt,
+      updatedAt: at,
+      averageRating: this.averageRating,
+      reviewCount: this.reviewCount,
+      hasRealMoneyPurchase: this.hasRealMoneyPurchase,
+      version: this.version + 1,
+    })
+  }
+
   private copyWith(
     printRun: PrintRun,
     availableUnits: number | null,
