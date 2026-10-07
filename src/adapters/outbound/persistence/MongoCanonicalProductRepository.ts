@@ -40,6 +40,7 @@ import {
   toCanonicalSnapshot,
   type CanonicalProductDocument,
 } from './canonical-mapping'
+import { PersistenceMappingError } from './mapping'
 import type { CombatBotCandidatesQueryPort } from '../../../application/ports/CombatBotCandidatesQueryPort'
 import { ProductType as ProductTypes } from '../../../domain/value-objects/canonical-product-values'
 
@@ -166,6 +167,16 @@ export class MongoCanonicalProductRepository
   /**
    * Búsqueda administrativa: mismo índice de tokens que `listStorefront`, sin
    * fijar `lifecycleStatus: ACTIVE` (ver `AdminProductSearchPort`).
+   *
+   * UN DOCUMENTO CORRUPTO NO TUMBA LA PÁGINA (hallazgo de auditoría, incidente
+   * HU-30.1 2026-10): `toCanonicalProduct` revalida los atributos persistidos
+   * y lanza `PersistenceMappingError` si alguno no pasa esa validación -antes
+   * de esta correccion, un solo documento asi hacia fallar `.map()` entero,
+   * devolviendo un 500 sin traducir para TODA la pagina, no solo para ese
+   * producto. Se excluye el documento afectado y se sigue sirviendo el resto;
+   * `total` conserva el conteo real de Mongo (incluye el excluido) porque
+   * corregirlo exigiria un segundo conteo, y sobreestimar en 1-2 resultados es
+   * un costo aceptable frente a volver a romper la pagina entera.
    */
   async searchAdminProducts(
     query: AdminProductSearchQuery,
@@ -178,8 +189,19 @@ export class MongoCanonicalProductRepository
       }>(pipeline, { hint, allowDiskUse: true })
       .toArray()
     const total = result?.count[0]?.total ?? 0
+
     return {
-      items: (result?.items ?? []).map(toCanonicalProduct),
+      items: (result?.items ?? []).flatMap((document) => {
+        try {
+          return [toCanonicalProduct(document)]
+        } catch (error: unknown) {
+          if (error instanceof PersistenceMappingError) {
+            return []
+          }
+
+          throw error
+        }
+      }),
       total: typeof total === 'number' ? total : total.toNumber(),
     }
   }

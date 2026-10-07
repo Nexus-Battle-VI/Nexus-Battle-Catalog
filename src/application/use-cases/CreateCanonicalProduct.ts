@@ -1,4 +1,5 @@
 import { CanonicalProduct, normalizeProductName } from '../../domain/entities/CanonicalProduct'
+import { DomainError } from '../../domain/errors/DomainError'
 import {
   CreditsPrice,
   PrintRun,
@@ -263,6 +264,8 @@ const parseCreateCommand = (raw: unknown): ParsedCreateCommand => {
   const type = parseProductType(parseString(requiredValue(record, 'type', path), `${path}.type`))
   const premium = parseBoolean(requiredValue(record, 'premium', path), `${path}.premium`)
   const realMoneyPrice = parseRealMoneyPrice(optionalValue(record, 'realMoneyPrice'))
+  const attributes = parseProductAttributes(requiredValue(record, 'attributes', path), type)
+  requireDropChanceAtCreation(attributes)
 
   return {
     sku: parseOptionalSku(optionalValue(record, 'sku')),
@@ -274,7 +277,7 @@ const parseCreateCommand = (raw: unknown): ParsedCreateCommand => {
       parseString(requiredValue(record, 'description', path), `${path}.description`),
     ),
     type,
-    attributes: parseProductAttributes(requiredValue(record, 'attributes', path), type),
+    attributes,
     printRun: PrintRun.create(
       parseInteger(requiredValue(record, 'printRun', path), `${path}.printRun`),
     ),
@@ -305,6 +308,37 @@ export const generateCanonicalSku = (name: ProductName, productId: ProductId): S
     .replace(/^-+|-+$/gu, '')
 
   return Sku.create(`${slug.length === 0 ? 'producto' : slug}-${productId.value.slice(0, 8)}`)
+}
+
+/**
+ * Un producto equipable (ARMA/ARMADURA/ITEM) nuevo debe declarar su tasa de
+ * caida Versus DESDE que nace (HU-30, correccion post-incidente): sin ella,
+ * `CaptureBattleDropSnapshot` de Player-Inventory rechaza la instantanea con
+ * `DROP_RATE_UNAVAILABLE` en cuanto alguien equipe el producto, y Combat no
+ * puede iniciar ninguna batalla donde ese equipamiento participe.
+ *
+ * SOLO afecta la CREACION. `parseProductAttributes` (usado tambien al leer
+ * productos ya persistidos) sigue aceptando `dropChanceBasisPoints` ausente a
+ * proposito -los productos historicos sin tasa siguen siendo legibles hasta
+ * que el backfill los corrija-; esta funcion es la unica que exige el campo,
+ * y solo en el camino de alta.
+ *
+ * `0` es un valor valido y distinto de "ausente" (`CompatibleAttributes`
+ * declara el campo opcional, no con un default): un administrador puede
+ * decidir explicitamente que un producto no cae.
+ */
+const requireDropChanceAtCreation = (attributes: ProductAttributes): void => {
+  const values = attributes.values
+
+  if (values.kind !== 'ARMA' && values.kind !== 'ARMADURA' && values.kind !== 'ITEM') {
+    return
+  }
+
+  if (values.dropChanceBasisPoints === undefined) {
+    throw new DomainError(
+      'attributes.values.dropChanceBasisPoints es obligatorio para productos ARMA, ARMADURA e ITEM (HU-30).',
+    )
+  }
 }
 
 const parseRealMoneyPrice = (raw: unknown): Money | null => {

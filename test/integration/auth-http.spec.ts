@@ -196,6 +196,7 @@ describe('API de catalogo con autenticacion activa', () => {
               magnitude: { mode: 'DICE', count: 2, sides: 6 },
             },
           ],
+          dropChanceBasisPoints: 200,
         },
       },
       printRun: 150,
