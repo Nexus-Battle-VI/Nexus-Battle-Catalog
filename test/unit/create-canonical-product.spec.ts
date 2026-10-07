@@ -387,6 +387,212 @@ describe('CreateCanonicalProduct', () => {
       'Fallo forzado en transaccion',
     )
   })
+
+  // HU-30 (correccion post-incidente): ARMA/ARMADURA/ITEM nuevos deben declarar
+  // su tasa de caida Versus DESDE que nacen. HEROE/HABILIDAD/EPICA no se tocan
+  // (seccion 15 del fix): su creacion sigue exactamente igual.
+  describe('HU-30: tasa de caida Versus obligatoria al crear equipables', () => {
+    const weaponCommand = (overrides: Record<string, unknown> = {}): object => ({
+      sku: 'hacha-de-prueba',
+      name: 'Hacha de Prueba',
+      imageUrl: 'https://assets.example.test/hacha.png',
+      description: 'Arma de prueba para HU-30.',
+      type: 'ARMA',
+      attributes: {
+        schemaVersion: '1',
+        values: {
+          kind: 'ARMA',
+          compatibilityScope: 'ALL_HEROES',
+          effects: [
+            { kind: 'DAMAGE', target: 'OPPONENT', magnitude: { mode: 'FIXED', amount: 2 } },
+          ],
+          ...overrides,
+        },
+      },
+      printRun: 1,
+      creditsPrice: 0,
+      premium: false,
+    })
+
+    const armorCommand = (overrides: Record<string, unknown> = {}): object => ({
+      sku: 'coraza-de-prueba',
+      name: 'Coraza de Prueba',
+      imageUrl: 'https://assets.example.test/coraza.png',
+      description: 'Armadura de prueba para HU-30.',
+      type: 'ARMADURA',
+      attributes: {
+        schemaVersion: '1',
+        values: {
+          kind: 'ARMADURA',
+          compatibilityScope: 'ALL_HEROES',
+          slot: 'CHEST',
+          effects: [
+            {
+              kind: 'STAT_MODIFIER',
+              target: 'SELF',
+              statistic: 'DEFENSE',
+              operation: 'INCREASE',
+              magnitude: { mode: 'FIXED', amount: 2 },
+            },
+          ],
+          ...overrides,
+        },
+      },
+      printRun: 1,
+      creditsPrice: 0,
+      premium: false,
+    })
+
+    const itemCommand = (overrides: Record<string, unknown> = {}): object => ({
+      sku: 'pocion-de-prueba',
+      name: 'Pocion de Prueba',
+      imageUrl: 'https://assets.example.test/pocion.png',
+      description: 'Item de prueba para HU-30.',
+      type: 'ITEM',
+      attributes: {
+        schemaVersion: '1',
+        values: {
+          kind: 'ITEM',
+          compatibilityScope: 'ALL_HEROES',
+          effects: [{ kind: 'HEALING', target: 'SELF', magnitude: { mode: 'FIXED', amount: 2 } }],
+          ...overrides,
+        },
+      },
+      printRun: 1,
+      creditsPrice: 0,
+      premium: false,
+    })
+
+    const abilityCommand = (): object => ({
+      sku: 'habilidad-de-prueba',
+      name: 'Habilidad de Prueba',
+      imageUrl: 'https://assets.example.test/habilidad.png',
+      description: 'Habilidad de prueba, ajena a HU-30.',
+      type: 'HABILIDAD',
+      attributes: {
+        schemaVersion: '1',
+        values: {
+          kind: 'HABILIDAD',
+          compatibleHeroSubtypes: ['GUERRERO_ARMAS'],
+          powerCostMode: 'FIXED',
+          powerCost: 2,
+          effects: [
+            { kind: 'DAMAGE', target: 'OPPONENT', magnitude: { mode: 'FIXED', amount: 3 } },
+          ],
+        },
+      },
+      printRun: 1,
+      creditsPrice: 0,
+      premium: false,
+    })
+
+    const epicCommand = (): object => ({
+      sku: 'epica-de-prueba',
+      name: 'Epica de Prueba',
+      imageUrl: 'https://assets.example.test/epica.png',
+      description: 'Epica de prueba, ajena a HU-30.',
+      type: 'EPICA',
+      attributes: {
+        schemaVersion: '1',
+        values: {
+          kind: 'EPICA',
+          compatibleHeroSubtype: 'GUERRERO_ARMAS',
+          specificEffects: [
+            { kind: 'DAMAGE', target: 'OPPONENT', magnitude: { mode: 'FIXED', amount: 4 } },
+          ],
+        },
+      },
+      printRun: 1,
+      creditsPrice: 0,
+      premium: false,
+    })
+
+    it('CAT-01: crea un ARMA con dropChanceBasisPoints=300', async () => {
+      const harness = buildHarness()
+
+      const result = await harness.useCase.execute(
+        weaponCommand({ dropChanceBasisPoints: 300 }),
+        undefined,
+        TRACE,
+      )
+
+      expect(result.attributes.values).toMatchObject({ dropChanceBasisPoints: 300 })
+    })
+
+    it('CAT-02: crea una ARMADURA con dropChanceBasisPoints=0 (explicito, valido)', async () => {
+      const harness = buildHarness()
+
+      const result = await harness.useCase.execute(
+        armorCommand({ dropChanceBasisPoints: 0 }),
+        undefined,
+        TRACE,
+      )
+
+      expect(result.attributes.values).toMatchObject({ dropChanceBasisPoints: 0 })
+    })
+
+    it('CAT-03: crea un ITEM con dropChanceBasisPoints=10000 (100%)', async () => {
+      const harness = buildHarness()
+
+      const result = await harness.useCase.execute(
+        itemCommand({ dropChanceBasisPoints: 10_000 }),
+        undefined,
+        TRACE,
+      )
+
+      expect(result.attributes.values).toMatchObject({ dropChanceBasisPoints: 10_000 })
+    })
+
+    it('CAT-04: rechaza un ARMA sin dropChanceBasisPoints', async () => {
+      const harness = buildHarness()
+
+      await expect(harness.useCase.execute(weaponCommand(), undefined, TRACE)).rejects.toThrow(
+        DomainError,
+      )
+      expect(harness.products.created).toHaveLength(0)
+    })
+
+    it('CAT-05: rechaza una ARMADURA con dropChanceBasisPoints=-1', async () => {
+      const harness = buildHarness()
+
+      await expect(
+        harness.useCase.execute(armorCommand({ dropChanceBasisPoints: -1 }), undefined, TRACE),
+      ).rejects.toThrow(DomainError)
+      expect(harness.products.created).toHaveLength(0)
+    })
+
+    it('CAT-06: rechaza un ITEM con dropChanceBasisPoints=10001', async () => {
+      const harness = buildHarness()
+
+      await expect(
+        harness.useCase.execute(itemCommand({ dropChanceBasisPoints: 10_001 }), undefined, TRACE),
+      ).rejects.toThrow(DomainError)
+      expect(harness.products.created).toHaveLength(0)
+    })
+
+    it('CAT-07: crea un HEROE sin dropChanceBasisPoints (no aplica, permitido)', async () => {
+      const harness = buildHarness()
+
+      await expect(harness.useCase.execute(heroCommand(), undefined, TRACE)).resolves.toBeDefined()
+      expect(harness.products.created).toHaveLength(1)
+    })
+
+    it('CAT-08: crea una HABILIDAD sin dropChanceBasisPoints (no aplica, permitido)', async () => {
+      const harness = buildHarness()
+
+      await expect(
+        harness.useCase.execute(abilityCommand(), undefined, TRACE),
+      ).resolves.toBeDefined()
+      expect(harness.products.created).toHaveLength(1)
+    })
+
+    it('CAT-09: crea una EPICA sin dropChanceBasisPoints (no aplica, permitido)', async () => {
+      const harness = buildHarness()
+
+      await expect(harness.useCase.execute(epicCommand(), undefined, TRACE)).resolves.toBeDefined()
+      expect(harness.products.created).toHaveLength(1)
+    })
+  })
 })
 
 describe('HeroSubtypeRegistryV1', () => {

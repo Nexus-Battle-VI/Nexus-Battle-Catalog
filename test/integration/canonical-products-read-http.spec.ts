@@ -47,6 +47,7 @@ describe('Lectura canónica de productos', () => {
             effects: [
               { kind: 'DAMAGE', target: 'OPPONENT', magnitude: { mode: 'FIXED', amount: 5 } },
             ],
+            dropChanceBasisPoints: 200,
           },
         },
         printRun: -1,

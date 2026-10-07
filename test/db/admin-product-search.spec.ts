@@ -2,6 +2,7 @@ import { MongoDBContainer, type StartedMongoDBContainer } from '@testcontainers/
 import type { Db, MongoClient } from 'mongodb'
 
 import { MongoCanonicalProductRepository } from '../../src/adapters/outbound/persistence/MongoCanonicalProductRepository'
+import type { CanonicalProductDocument } from '../../src/adapters/outbound/persistence/canonical-mapping'
 import { SearchAdminProducts } from '../../src/application/use-cases/SearchAdminProducts'
 import { ListCatalogStorefront } from '../../src/application/use-cases/ListCatalogStorefront'
 import {
@@ -97,6 +98,35 @@ describe('MongoCanonicalProductRepository.searchAdminProducts', () => {
     expect(page1).toMatchObject({ page: 1, pageSize: 16, total: 17 })
     expect(page1.items).toHaveLength(16)
     expect(page2.items).toHaveLength(1)
+  })
+
+  /**
+   * Hallazgo de auditoria (incidente HU-30.1, 2026-10): un documento con un
+   * atributo persistido invalido (aqui, simulando una escritura que se coló
+   * por una via no oficial, nunca por `ConfigureProductDropChance`) NO debe
+   * tumbar la pagina entera. Antes de esta correccion, `toCanonicalProduct`
+   * lanzaba `PersistenceMappingError` dentro de `.map()` y el 500 resultante
+   * rompia el listado completo, no solo el producto afectado.
+   */
+  it('excluye un documento corrupto de la pagina sin romper el resto (hallazgo HU-30.1)', async () => {
+    const valido = catalogFixture(1, { name: 'Espada Valida' })
+    const corrupto = catalogFixture(2, { name: 'Espada Corrupta' })
+    await products.create(valido)
+    await products.create(corrupto)
+
+    // Simula una escritura fuera del caso de uso oficial: un valor fuera del
+    // rango 0..10000 que `parseCompatibility` rechaza al reconstruir.
+    await db
+      .collection<CanonicalProductDocument>('products')
+      .updateOne(
+        { _id: corrupto.productId.value },
+        { $set: { 'attributes.values.dropChanceBasisPoints': -5 } },
+      )
+
+    const resultado = await search.execute({})
+
+    expect(resultado.items).toHaveLength(1)
+    expect(resultado.items[0]?.name).toBe('Espada Valida')
   })
 
   it('usa el mismo indice de tokens que la vitrina publica cuando hay texto de busqueda', async () => {
