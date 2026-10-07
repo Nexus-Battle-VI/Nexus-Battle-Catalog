@@ -654,6 +654,7 @@ describe('Product Assets Management (HU-33.8 / ADR-016)', () => {
             effects: [
               { kind: 'DAMAGE', target: 'OPPONENT', magnitude: { mode: 'FIXED', amount: 5 } },
             ],
+            dropChanceBasisPoints: 200,
           },
         },
       }
@@ -685,6 +686,7 @@ describe('Product Assets Management (HU-33.8 / ADR-016)', () => {
             effects: [
               { kind: 'DAMAGE', target: 'OPPONENT', magnitude: { mode: 'FIXED', amount: 5 } },
             ],
+            dropChanceBasisPoints: 200,
           },
         },
       }
@@ -711,6 +713,7 @@ describe('Product Assets Management (HU-33.8 / ADR-016)', () => {
             effects: [
               { kind: 'DAMAGE', target: 'OPPONENT', magnitude: { mode: 'FIXED', amount: 5 } },
             ],
+            dropChanceBasisPoints: 200,
           },
         },
       }

@@ -53,6 +53,7 @@ describe('API de catalogo', () => {
                 magnitude: { mode: 'FIXED', amount: 5 },
               },
             ],
+            dropChanceBasisPoints: 200,
           },
         },
         printRun: -1,

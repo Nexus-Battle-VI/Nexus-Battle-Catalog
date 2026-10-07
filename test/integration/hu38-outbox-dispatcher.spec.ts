@@ -36,6 +36,7 @@ const CREATE_COMMAND = {
       kind: 'ARMA',
       compatibilityScope: 'ALL_HEROES',
       effects: [{ kind: 'DAMAGE', target: 'OPPONENT', magnitude: { mode: 'FIXED', amount: 2 } }],
+      dropChanceBasisPoints: 200,
     },
   },
   printRun: 150,

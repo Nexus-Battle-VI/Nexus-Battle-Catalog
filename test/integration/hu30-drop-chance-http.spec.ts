@@ -65,6 +65,7 @@ const ARMA = (sku: string): Record<string, unknown> => ({
       kind: 'ARMA',
       compatibilityScope: 'ALL_HEROES',
       effects: [{ kind: 'DAMAGE', target: 'OPPONENT', magnitude: { mode: 'FIXED', amount: 2 } }],
+      dropChanceBasisPoints: 100,
     },
   },
   printRun: -1,
