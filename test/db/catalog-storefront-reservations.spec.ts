@@ -26,7 +26,7 @@ import {
   storefrontMongoQuery,
 } from '../../src/adapters/outbound/persistence/storefront-search-projection'
 import { Long } from 'mongodb'
-import { PrintRun } from '../../src/domain/value-objects/canonical-product-values'
+import { PrintRun, ProductType } from '../../src/domain/value-objects/canonical-product-values'
 import { catalogFixture } from '../support/storefront-fixtures'
 import { closeMongoTestResources } from '../support/mongo-test-resources'
 
@@ -80,6 +80,41 @@ describe('Mongo storefront and durable batch reservations', () => {
     expect((await query.execute({ currency: 'USD', page: 2 })).items).toHaveLength(1)
     expect((await query.execute({ query: '999' })).total).toBe(18)
     expect((await query.execute({ query: '.*' })).total).toBe(0)
+  })
+
+  it('filters non-sellable premium types inside Mongo before skip, limit and count', async () => {
+    await products.create(
+      catalogFixture(100, {
+        name: 'A épica no vendible',
+        currency: 'USD',
+        type: ProductType.Epic,
+      }),
+    )
+    await products.create(
+      catalogFixture(101, {
+        name: 'B épica no vendible',
+        currency: 'USD',
+        type: ProductType.Epic,
+      }),
+    )
+    for (let n = 1; n <= 17; n++) {
+      await products.create(catalogFixture(n, { currency: 'USD' }))
+    }
+
+    const query = new ListCatalogStorefront(products)
+    const first = await query.execute({ premium: true, types: 'HEROE,ARMA,ARMADURA' })
+    const second = await query.execute({
+      premium: true,
+      types: 'HEROE,ARMA,ARMADURA',
+      page: 2,
+    })
+
+    expect(first).toMatchObject({ page: 1, pageSize: 16, total: 17 })
+    expect(first.items).toHaveLength(16)
+    expect(second.items).toHaveLength(1)
+    expect(
+      [...first.items, ...second.items].every((item) => item.type === ProductType.Weapon),
+    ).toBe(true)
   })
 
   it('uses a real multikey index, preserves one-character literal search and transfers only a 16-item facet', async () => {

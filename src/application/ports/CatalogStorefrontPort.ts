@@ -6,6 +6,8 @@ export const STOREFRONT_PAGE_SIZE = 16
 export interface CatalogStorefrontQuery {
   readonly query?: string
   readonly type?: ProductType
+  /** Conjunto inclusivo alternativo a `type`; se aplica antes de paginar. */
+  readonly types?: readonly ProductType[]
   readonly minPrice?: number
   readonly maxPrice?: number
   readonly currency?: string
