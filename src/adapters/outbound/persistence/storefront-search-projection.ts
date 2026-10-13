@@ -56,9 +56,11 @@ export const storefrontMongoQuery = (
   readonly hint: string
 } => {
   const text = normalizeStorefrontText(query.query?.trim() ?? '')
+  const typeClause =
+    query.type ?? (query.types === undefined ? { $exists: true } : { $in: query.types })
   const filter: Filter<CanonicalProductDocument> = {
     lifecycleStatus: 'ACTIVE',
-    type: query.type ?? { $exists: true },
+    type: typeClause,
     ...(query.premium === undefined ? {} : { premium: query.premium }),
   }
   if (query.currency !== undefined) filter['realMoneyPrice.currency'] = query.currency

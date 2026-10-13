@@ -176,6 +176,7 @@ export class InMemoryCanonicalProductRepository
       .filter((product) => {
         if (product.lifecycleStatus !== 'ACTIVE') return false
         if (query.type !== undefined && product.type !== query.type) return false
+        if (query.types !== undefined && !query.types.includes(product.type)) return false
         if (query.premium !== undefined && product.premium !== query.premium) return false
         const price = product.realMoneyPrice
         if (query.currency !== undefined && price?.currency !== query.currency) return false
