@@ -6,6 +6,7 @@ import { STOREFRONT_PAGE_SIZE, type CatalogStorefrontPort } from '../ports/Catal
 export interface ListCatalogStorefrontCommand {
   readonly query?: string
   readonly type?: string
+  readonly types?: string
   readonly minPrice?: number
   readonly maxPrice?: number
   readonly currency?: string
@@ -55,10 +56,21 @@ export class ListCatalogStorefront {
         'currency es obligatoria cuando se filtra por precio; no se convierten divisas.',
       )
     }
+    if (command.type !== undefined && command.types !== undefined) {
+      throw new DomainError('type y types son filtros alternativos; no se pueden combinar.')
+    }
+    const types =
+      command.types === undefined
+        ? undefined
+        : [...new Set(command.types.split(',').map((type) => parseProductType(type)))]
+    if (types?.length === 0) {
+      throw new DomainError('types debe incluir al menos un tipo de producto.')
+    }
     const result = await this.products.listStorefront({
       ...command,
       page,
       type: command.type === undefined ? undefined : parseProductType(command.type),
+      types,
     })
     return {
       items: result.items.map((product) => toCanonicalProductDto(product.toSnapshot())),

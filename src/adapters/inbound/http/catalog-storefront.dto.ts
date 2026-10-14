@@ -1,6 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import { Transform, Type } from 'class-transformer'
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator'
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator'
 import { CanonicalProductResponse } from './canonical-products.dto'
 
 export class CatalogStorefrontRequest {
@@ -16,6 +26,18 @@ export class CatalogStorefrontRequest {
   @IsOptional()
   @IsIn(['HEROE', 'HABILIDAD', 'ARMA', 'ARMADURA', 'ITEM', 'EPICA'])
   type?: string
+
+  @ApiPropertyOptional({
+    description:
+      'Lista inclusiva separada por comas, alternativa a type. El filtro se aplica antes de total y paginación.',
+    example: 'HEROE,ARMA,ARMADURA',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(
+    /^(HEROE|HABILIDAD|ARMA|ARMADURA|ITEM|EPICA)(,(HEROE|HABILIDAD|ARMA|ARMADURA|ITEM|EPICA))*$/u,
+  )
+  types?: string
 
   @ApiPropertyOptional({
     description: 'Importe mínimo en unidades menores de currency; requiere currency.',

@@ -3,6 +3,7 @@ import { InMemoryStockReservationRepository } from '../../src/adapters/outbound/
 import { ListCatalogStorefront } from '../../src/application/use-cases/ListCatalogStorefront'
 import { StockReservations } from '../../src/application/use-cases/StockReservations'
 import { DomainError } from '../../src/domain/errors/DomainError'
+import { ProductType } from '../../src/domain/value-objects/canonical-product-values'
 import { catalogFixture } from '../support/storefront-fixtures'
 
 const ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -62,6 +63,41 @@ describe('Canonical storefront and stock reservations', () => {
     await expect(storefront.execute({ currency: 'BTC' })).rejects.toThrow('currency')
     await expect(storefront.execute({ page: 0 })).rejects.toThrow('page')
     await expect(storefront.execute({ currency: 'USD', maxPrice: 0.5 })).rejects.toThrow('enteros')
+  })
+
+  it('filters an allowed type set before calculating total and pages', async () => {
+    await products.create(
+      catalogFixture(100, {
+        name: 'A épica no vendible',
+        currency: 'USD',
+        type: ProductType.Epic,
+      }),
+    )
+    await products.create(
+      catalogFixture(101, {
+        name: 'B épica no vendible',
+        currency: 'USD',
+        type: ProductType.Epic,
+      }),
+    )
+    for (let n = 1; n <= 17; n++) {
+      await products.create(catalogFixture(n, { currency: 'USD' }))
+    }
+
+    const first = await storefront.execute({
+      premium: true,
+      types: 'HEROE,ARMA,ARMADURA',
+    })
+    const second = await storefront.execute({
+      premium: true,
+      types: 'HEROE,ARMA,ARMADURA',
+      page: 2,
+    })
+
+    expect(first).toMatchObject({ page: 1, pageSize: 16, total: 17 })
+    expect(first.items).toHaveLength(16)
+    expect(second.items).toHaveLength(1)
+    expect([...first.items, ...second.items].every((item) => item.type === 'ARMA')).toBe(true)
   })
 
   it('preserves a negative outcome after restock without partially reserving the batch', async () => {

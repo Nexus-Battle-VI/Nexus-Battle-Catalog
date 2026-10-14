@@ -22,10 +22,12 @@ export const catalogFixture = (
     amount?: number
     name?: string
     description?: string
+    type?: typeof ProductType.Weapon | typeof ProductType.Epic
   } = {},
 ): CanonicalProduct => {
   const suffix = String(sequence).padStart(12, '0')
   const printRun = PrintRun.create(options.printRun ?? 5)
+  const type = options.type ?? ProductType.Weapon
   return CanonicalProduct.restore({
     productId: ProductId.create(`00000000-0000-4000-8000-${suffix}`),
     sku: Sku.create(`producto-${suffix}`),
@@ -34,19 +36,37 @@ export const catalogFixture = (
       'https://catalog.example.test/api/v1/catalog/product-assets/00000000-0000-4000-8000-000000000001/content',
     ),
     description: ProductDescription.create(options.description ?? 'Espada con efecto de fuego.'),
-    type: ProductType.Weapon,
+    type,
     attributes: parseProductAttributes(
-      {
-        schemaVersion: '1',
-        values: {
-          kind: 'ARMA',
-          compatibilityScope: 'ALL_HEROES',
-          effects: [
-            { kind: 'DAMAGE', target: 'OPPONENT', magnitude: { mode: 'FIXED', amount: 7 } },
-          ],
-        },
-      },
-      ProductType.Weapon,
+      type === ProductType.Epic
+        ? {
+            schemaVersion: '1',
+            values: {
+              kind: 'EPICA',
+              compatibleHeroSubtype: 'MEDICO',
+              generalEffect: {
+                kind: 'HEALING',
+                target: 'ALLIED_GROUP',
+                magnitude: { mode: 'FIXED', amount: 3 },
+              },
+              specificEffect: {
+                kind: 'HEALING',
+                target: 'ALLY',
+                magnitude: { mode: 'FIXED', amount: 8 },
+              },
+            },
+          }
+        : {
+            schemaVersion: '1',
+            values: {
+              kind: 'ARMA',
+              compatibilityScope: 'ALL_HEROES',
+              effects: [
+                { kind: 'DAMAGE', target: 'OPPONENT', magnitude: { mode: 'FIXED', amount: 7 } },
+              ],
+            },
+          },
+      type,
     ),
     printRun,
     availableUnits: printRun.isInfinite ? null : (options.availableUnits ?? printRun.value),

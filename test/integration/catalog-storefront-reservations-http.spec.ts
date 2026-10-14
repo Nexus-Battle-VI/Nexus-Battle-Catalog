@@ -82,6 +82,16 @@ describe('Storefront and internal stock HTTP contract', () => {
     expect(none.body).toMatchObject({ items: [], total: 0 })
   })
 
+  it('accepts a comma-separated type set and applies it to the authoritative total', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/catalog/products?types=HEROE,ARMA,ARMADURA')
+      .expect(200)
+
+    expect(response.body).toMatchObject({ page: 1, pageSize: 16, total: 17 })
+    expect(response.body.items).toHaveLength(16)
+    expect(response.body.items.every((item: { type: string }) => item.type === 'ARMA')).toBe(true)
+  })
+
   it.each([
     'page=0',
     'page=1.5',
@@ -90,6 +100,8 @@ describe('Storefront and internal stock HTTP contract', () => {
     'currency=USD&minPrice=20&maxPrice=10',
     'currency=BTC',
     'promotion=true',
+    'types=ARMA,DESCONOCIDO',
+    'type=ARMA&types=ARMA,ARMADURA',
     'page=1&page=2',
   ])('rejects invalid or unsupported filters: %s', async (query) => {
     await request(app.getHttpServer()).get(`/api/v1/catalog/products?${query}`).expect(400)
