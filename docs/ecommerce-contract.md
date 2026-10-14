@@ -21,11 +21,12 @@ esta consulta. No se duplican documentos legacy para mostrarlos en la tienda.
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `query`                | Hasta 200 caracteres; substring literal normalizado NFKC/minúsculas en nombre, descripción, SKU, tipo, valores de atributos y precios. No es una expresión regular. |
 | `type`                 | `HEROE`, `HABILIDAD`, `ARMA`, `ARMADURA`, `ITEM`, `EPICA`.                                                                                                          |
+| `types`                | Lista inclusiva separada por comas, alternativa a `type`; se filtra antes de calcular `total` y paginar.                                                            |
 | `currency`             | `COP`, `USD` o `EUR`; selecciona la moneda exacta de `realMoneyPrice`.                                                                                              |
 | `minPrice`, `maxPrice` | Enteros no negativos en unidades menores; requieren `currency`; mínimo no supera máximo.                                                                            |
 | `page`                 | Entero positivo; por defecto 1; páginas fijas de 16.                                                                                                                |
 
-Los filtros se combinan con AND. Se ordena por `normalizedName` y `productId`
+Los filtros se combinan con AND; `type` y `types` son mutuamente excluyentes. Se ordena por `normalizedName` y `productId`
 como desempate. `total` cuenta todos los resultados antes de paginar; una página
 posterior al final devuelve `items: []` con el total real. Solo se muestran
 productos `ACTIVE`. Los agotados permanecen visibles con `availableUnits: 0`;
